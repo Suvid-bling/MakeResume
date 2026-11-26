@@ -1,0 +1,65 @@
+{
+  "name": "resume-matcher-ui",
+  "version": "1.4.0",
+  "private": true,
+  "engines": {
+    "node": "26.13.1"
+  },
+  "scripts": {
+    "dev": "next dev --turbopack -H 127.0.0.1",
+    "build": "next build",
+    "start": "next start -H 127.0.0.1",
+    "lint": "oxlint && oxfmt --check \"**/*.{js,jsx,mjs,cjs,ts,tsx,mts,cts}\"",
+    "typecheck": "tsc --noEmit",
+    "format": "oxfmt",
+    "test": "vitest run",
+    "guard": "node scripts/swiss-guard.mjs",
+    "guard:update": "node scripts/swiss-guard.mjs --update",
+    "report:first-load": "node scripts/first-load-report.mjs"
+  },
+  "dependencies": {
+    "@dnd-kit/core": "6.3.1",
+    "@dnd-kit/sortable": "10.0.0",
+    "@dnd-kit/utilities": "3.2.2",
+    "@fontsource/noto-sans": "5.3.0",
+    "@fontsource/noto-sans-mono": "5.3.0",
+    "@fontsource/noto-serif": "5.3.0",
+    "@phosphor-icons/react": "2.1.10",
+    "@tiptap/extension-link": "3.32.2",
+    "@tiptap/extension-underline": "3.32.2",
+    "@tiptap/react": "3.32.2",
+    "@tiptap/starter-kit": "3.32.2",
+    "clsx": "2.1.1",
+    "framer-motion": "13.5.1",
+    "isomorphic-dompurify": "4.6.0",
+    "lucide-react": "0.577.0",
+    "motion": "13.5.1",
+    "next": "16.4.5",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "sonner": "2.0.8",
+    "tailwind-merge": "3.7.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "4.3.4",
+    "@testing-library/jest-dom": "7.0.1",
+    "@testing-library/react": "16.3.3",
+    "@types/node": "26.6.6",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.2.1",
+    "jsdom": "30.1.3",
+    "oxfmt": "0.72.0",
+    "oxlint": "1.87.0",
+    "tailwindcss": "4.3.4",
+    "typescript": "5.9.3",
+    "vitest": "5.1.0"
+  },
+  "overrides": {
+    "undici": "8.12.3",
+    "postcss": "8.5.32",
+    "sharp": "0.35.5",
+    "motion-dom": "13.5.1",
+    "motion-utils": "13.5.0"
+  }
+}
