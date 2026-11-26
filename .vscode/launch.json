@@ -1,0 +1,21 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Backend: Resume Matcher (debug)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "app.main",
+      "cwd": "${workspaceFolder}/Resume-Matcher-main/apps/backend",
+      "python": "${workspaceFolder}/Resume-Matcher-main/apps/backend/.venv/Scripts/python.exe",
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "env": {
+        "HOST": "127.0.0.1",
+        "PORT": "8001",
+        "RELOAD": "false"
+      },
+      "subProcess": true
+    }
+  ]
+}
