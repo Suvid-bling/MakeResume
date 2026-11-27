@@ -4,7 +4,8 @@ import type {
   InterviewPrepData,
 } from '@/components/common/resume_previewer_context';
 import type { ResumeData } from '@/components/dashboard/resume-component';
-import { type TemplateSettings } from '@/lib/types/template-settings';
+import type { DescriptionStyle } from '@/lib/utils/description-styles';
+import { type TemplateSettings, normalizeDescriptionFormat } from '@/lib/types/template-settings';
 import { type Locale } from '@/i18n/config';
 import { clearResumeWizardCompletion } from '@/lib/utils/resume-wizard-storage';
 import {
@@ -37,7 +38,7 @@ interface ProcessedResume {
     location?: string | null;
     years?: string;
     description?: string[];
-    descriptionStyles?: ('bullet' | 'plain')[];
+    descriptionStyles?: DescriptionStyle[];
   }>;
   education?: Array<{
     id: number;
@@ -54,7 +55,7 @@ interface ProcessedResume {
     github?: string | null;
     website?: string | null;
     description?: string[];
-    descriptionStyles?: ('bullet' | 'plain')[];
+    descriptionStyles?: DescriptionStyle[];
   }>;
   additional?: {
     technicalSkills?: string[];
@@ -85,6 +86,7 @@ export interface PageFitSettings {
   compactMode: boolean;
   showContactIcons: boolean;
   accentColor: string;
+  descriptionFormat: 'bullet' | 'text';
   lang?: string;
 }
 
@@ -102,6 +104,33 @@ export interface BulletSelectionSummary {
   final_pages: number | null;
   /** Re-render of the rewritten result: 'skipped' means final_pages predates the rewrite. */
   final_check?: 'ok' | 'skipped' | null;
+}
+
+/** An item the length fit removed from, or put back into, the Additional section. */
+export interface LengthFitItem {
+  field: 'technicalSkills' | 'awards' | 'certificationsTraining' | 'workExperience';
+  text: string;
+}
+
+/** What the length safety net measured and changed (improve/preview `length_fit`). */
+export interface LengthFitSummary {
+  /** Null when pages are unlimited: nothing was measured. */
+  target_pages: number | null;
+  /** fit: target pages with the last page 90% to 100% full. */
+  status: 'fit' | 'over' | 'under' | 'unavailable' | 'skipped';
+  pages_before?: number | null;
+  last_page_fill_before?: number | null;
+  pages_after?: number | null;
+  last_page_fill_after?: number | null;
+  renders: number;
+  rounds: number;
+  /** Extra AI calls the safety net made (at most three). */
+  ai_calls: number;
+  dropped: LengthFitItem[];
+  restored: LengthFitItem[];
+  /** Row paths such as `workExperience[0].description[3]` written beyond the master entry. */
+  review_paths: string[];
+  stopped: 'fit' | 'max_rounds' | 'timeout' | 'unmeasurable' | 'no_progress' | 'unlimited';
 }
 
 /** Maps builder template settings onto the PDF/page-fit parameter names. */
@@ -123,6 +152,7 @@ export function toPageFitSettings(settings: TemplateSettings, locale?: string): 
     compactMode: settings.compactMode,
     showContactIcons: settings.showContactIcons,
     accentColor: settings.accentColor,
+    descriptionFormat: normalizeDescriptionFormat(settings.descriptionFormat),
     ...(locale ? { lang: locale } : {}),
   };
 }
@@ -263,6 +293,8 @@ export async function previewImproveResume(
     maxBulletsPerEntry?: number;
     pageFit?: PageFitSettings;
     maxPages?: number;
+    /** How description rows render: "text" turns on the "- " / "-> " row structure. */
+    descriptionFormat?: 'bullet' | 'text';
     /** Id to follow the live stages with subscribeToProgress. */
     progressId?: string;
     /** Required when promptId is "create": which style sample to write toward. */
@@ -279,6 +311,9 @@ export async function previewImproveResume(
       : {}),
     ...(options?.pageFit !== undefined ? { page_fit: options.pageFit } : {}),
     ...(options?.maxPages !== undefined ? { max_pages: options.maxPages } : {}),
+    ...(options?.descriptionFormat !== undefined
+      ? { description_format: options.descriptionFormat }
+      : {}),
     ...(options?.styleSampleId ? { style_sample_id: options.styleSampleId } : {}),
   });
 }
@@ -373,6 +408,7 @@ export function getResumePdfUrl(
     params.set('compactMode', String(settings.compactMode));
     params.set('showContactIcons', String(settings.showContactIcons));
     params.set('accentColor', settings.accentColor);
+    params.set('descriptionFormat', normalizeDescriptionFormat(settings.descriptionFormat));
   } else {
     params.set('template', 'swiss-single');
     params.set('pageSize', 'A4');

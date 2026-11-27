@@ -126,7 +126,7 @@ def _section_fields(
             (f"additional.{k}", _join(additional.get(k)))
             for k in (
                 "technicalSkills",
-                "languages",
+                # "languages" is never rendered, so it is never expected.
                 "certificationsTraining",
                 "awards",
             )

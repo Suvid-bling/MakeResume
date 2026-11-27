@@ -40,7 +40,12 @@ import {
   type TailorPageLimit,
 } from '@/lib/utils/tailor-length-settings';
 import { DEFAULT_TEMPLATE_SETTINGS, type TemplateType } from '@/lib/types/template-settings';
-import { fetchPromptConfig, fetchStyleSamples, type PromptOption, type StyleSample } from '@/lib/api/config';
+import {
+  fetchPromptConfig,
+  fetchStyleSamples,
+  type PromptOption,
+  type StyleSample,
+} from '@/lib/api/config';
 import { getPreviewErrorMessage } from '@/lib/utils/preview-error';
 import { Dropdown } from '@/components/ui/dropdown';
 import { useStatusCache } from '@/lib/context/status-cache';
@@ -947,6 +952,7 @@ export default function TailorPage() {
           detailedChanges={pendingResult?.data?.detailed_changes}
           errorMessage={diffConfirmError ?? undefined}
           selectionSummary={pendingResult?.data?.bullet_selection}
+          lengthFit={pendingResult?.data?.length_fit}
           heavyMode={selectedPromptId === 'heavy'}
           actionsDisabled={keywordBusy}
           placements={pendingResult?.data?.keyword_placements}

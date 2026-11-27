@@ -355,7 +355,6 @@ export function resumeKeywordText(data: ResumeData): string {
   parts.push(
     ...(additional.technicalSkills ?? []),
     ...(additional.certificationsTraining ?? []),
-    ...(additional.languages ?? []),
     ...(additional.awards ?? [])
   );
   for (const section of Object.values(data.customSections ?? {})) {

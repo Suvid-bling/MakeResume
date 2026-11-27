@@ -129,6 +129,20 @@ class _PDFDeadlineExceeded(TimeoutError):
         super().__init__(stage)
 
 
+@dataclass
+class _LayoutCapture:
+    """Ask a render to emulate the PDF layout and read the page's layout probe.
+
+    ``viewport_width`` / ``viewport_height`` are the printable area in CSS px. The
+    render fills ``layout`` with ``window.__resumeLayout`` (None when the probe did
+    not answer or reported an error).
+    """
+
+    viewport_width: int
+    viewport_height: int
+    layout: dict[str, Any] | None = None
+
+
 _playwright: Playwright | None = None
 _browser: Optional[Browser] = None
 _init_lock = asyncio.Lock()  # Lock to prevent race condition during initialization
@@ -318,6 +332,28 @@ def _resolve_pdf_margins(margins: Optional[dict]) -> dict:
     return {"top": "10mm", "right": "10mm", "bottom": "10mm", "left": "10mm"}
 
 
+# Paper sizes in mm, as Chromium's "A4" and "Letter" formats.
+_PAGE_SIZES_MM = {"A4": (210.0, 297.0), "LETTER": (215.9, 279.4)}
+
+
+def _mm_to_px(mm: float) -> float:
+    """CSS px (96 per inch) of a length in millimetres."""
+    return mm / 25.4 * 96
+
+
+def _content_area_mm(page_size: str, margins: Optional[dict]) -> tuple[float, float]:
+    """Printable width and height in mm: the page minus the PDF margins."""
+    width, height = _PAGE_SIZES_MM.get(page_size, _PAGE_SIZES_MM["A4"])
+    resolved = {
+        key: float(value.removesuffix("mm"))
+        for key, value in _resolve_pdf_margins(margins).items()
+    }
+    return (
+        width - resolved["left"] - resolved["right"],
+        height - resolved["top"] - resolved["bottom"],
+    )
+
+
 def _find_chromium_executable() -> Optional[str]:
     """Find system Chrome/Chromium/Edge executable across platforms."""
     if sys.platform == "win32":
@@ -413,6 +449,7 @@ async def _render_page_to_pdf(
     pdf_format: str,
     pdf_margins: dict,
     work_deadline: float | None = None,
+    capture: _LayoutCapture | None = None,
 ) -> bytes:
     # NOTE: do NOT use wait_until="networkidle" here. The Next.js dev server
     # (HMR/Turbopack + RSC streaming) keeps the network busy, so "idle" may
@@ -423,6 +460,22 @@ async def _render_page_to_pdf(
     # so the outcome is deterministic.
     if work_deadline is None:
         work_deadline = asyncio.get_running_loop().time() + (_NAV_TIMEOUT_MS / 1000)
+
+    if capture is not None:
+        # Lay the page out as the PDF will: content width, print stylesheet.
+        await _await_before_deadline(
+            page.set_viewport_size(
+                {
+                    "width": max(1, capture.viewport_width),
+                    "height": max(1, capture.viewport_height),
+                }
+            ),
+            work_deadline,
+            "viewport setup",
+        )
+        await _await_before_deadline(
+            page.emulate_media(media="print"), work_deadline, "media emulation"
+        )
 
     response = await _await_before_deadline(
         page.goto(
@@ -479,6 +532,8 @@ async def _render_page_to_pdf(
         work_deadline,
         "font readiness",
     )
+    if capture is not None:
+        capture.layout = await _read_layout_probe(page, work_deadline)
     return await _await_before_deadline(
         page.pdf(
             format=pdf_format,
@@ -488,6 +543,35 @@ async def _render_page_to_pdf(
         work_deadline,
         "PDF generation",
     )
+
+
+async def _read_layout_probe(page: Page, work_deadline: float) -> dict[str, Any] | None:
+    """Read ``window.__resumeLayout`` once the print page has published it.
+
+    A page that never answers (an old frontend build, a failed measurement) costs the
+    caller its layout data, not the PDF: this returns None and the render goes on.
+    """
+    try:
+        await _await_before_deadline(
+            page.wait_for_function(
+                "() => window.__resumeLayout !== undefined",
+                timeout=_stage_timeout_ms(work_deadline),
+            ),
+            work_deadline,
+            "layout probe",
+        )
+        layout = await _await_before_deadline(
+            page.evaluate("() => window.__resumeLayout"),
+            work_deadline,
+            "layout probe",
+        )
+    except _PDFDeadlineExceeded:
+        logger.warning("Layout probe did not answer in time; continuing without it")
+        return None
+    if not isinstance(layout, dict) or "error" in layout:
+        logger.warning("Layout probe reported a failure: %s", layout)
+        return None
+    return layout
 
 
 _DEFAULT_PORTS = {"http": 80, "https": 443}
@@ -620,6 +704,7 @@ async def _render_with_browser(
     pdf_margins: dict,
     work_deadline: float | None = None,
     total_deadline: float | None = None,
+    capture: _LayoutCapture | None = None,
 ) -> bytes:
     if work_deadline is None or total_deadline is None:
         work_deadline, total_deadline = _render_deadlines()
@@ -639,6 +724,9 @@ async def _render_with_browser(
             work_deadline,
             "request filter",
         )
+        # Only a layout render passes `capture`, so a plain render calls this exactly
+        # as before.
+        extra = {"capture": capture} if capture is not None else {}
         return await _render_page_to_pdf(
             page,
             url,
@@ -646,6 +734,7 @@ async def _render_with_browser(
             pdf_format,
             pdf_margins,
             work_deadline,
+            **extra,
         )
     except BaseException as error:
         render_error = error
@@ -706,6 +795,7 @@ def _render_resume_pdf_sync(
     pdf_format: str,
     pdf_margins: dict,
     monotonic_deadline: float,
+    capture: _LayoutCapture | None = None,
 ) -> bytes:
     async def _run() -> bytes:
         remaining = max(0.0, monotonic_deadline - time.monotonic())
@@ -720,6 +810,7 @@ def _render_resume_pdf_sync(
             browser = await _await_before_deadline(
                 _launch_browser(playwright), work_deadline, "threaded browser launch"
             )
+            extra = {"capture": capture} if capture is not None else {}
             return await _render_with_browser(
                 browser,
                 url,
@@ -728,6 +819,7 @@ def _render_resume_pdf_sync(
                 pdf_margins,
                 work_deadline,
                 total_deadline,
+                **extra,
             )
         finally:
             if browser is not None:
@@ -747,11 +839,13 @@ async def _render_resume_pdf_in_thread(
     pdf_format: str,
     pdf_margins: dict,
     total_deadline: float,
+    capture: _LayoutCapture | None = None,
 ) -> asyncio.Task[bytes]:
     """Start a fallback worker whose lifetime can outlast its awaiting request."""
     monotonic_deadline = time.monotonic() + max(
         0.0, total_deadline - asyncio.get_running_loop().time()
     )
+    extra = {"capture": capture} if capture is not None else {}
     return asyncio.create_task(
         asyncio.to_thread(
             _render_resume_pdf_sync,
@@ -760,6 +854,7 @@ async def _render_resume_pdf_in_thread(
             pdf_format,
             pdf_margins,
             monotonic_deadline,
+            **extra,
         )
     )
 
@@ -1076,8 +1171,10 @@ async def _render_on_shared_browser(
     pdf_margins: dict,
     work_deadline: float,
     total_deadline: float,
+    capture: _LayoutCapture | None = None,
 ) -> bytes:
     """Render once, retrying only when the owned browser disconnected."""
+    extra = {"capture": capture} if capture is not None else {}
     try:
         browser = await _replace_disconnected_browser(work_deadline, total_deadline)
         for attempt in range(2):
@@ -1092,6 +1189,7 @@ async def _render_on_shared_browser(
                         pdf_margins,
                         work_deadline,
                         total_deadline,
+                        **extra,
                     )
                 finally:
                     _release_browser_user(browser, users)
@@ -1127,6 +1225,40 @@ async def render_resume_pdf(
         Margins are applied via Playwright's PDF margins, ensuring they appear
         on every page (not just the first page like HTML padding would).
     """
+    return await _render_pdf(url, page_size, selector, margins, None)
+
+
+async def render_resume_layout(
+    url: str,
+    page_size: str = "A4",
+    selector: str = f".resume-print, {PRINT_ERROR_SELECTOR}",
+    margins: Optional[dict] = None,
+) -> tuple[bytes, dict[str, Any] | None]:
+    """Render a print URL to PDF bytes and read the page's layout probe.
+
+    The URL must carry ``probe=1`` so the print route publishes
+    ``window.__resumeLayout``. The page is laid out as the PDF is: the viewport is the
+    printable content area (page size minus ``margins``) and the print stylesheet is
+    emulated. Returns ``(pdf_bytes, layout)``; ``layout`` is None when the probe did not
+    answer, in which case the PDF is still valid.
+    """
+    width_mm, height_mm = _content_area_mm(page_size, margins)
+    capture = _LayoutCapture(
+        viewport_width=round(_mm_to_px(width_mm)),
+        viewport_height=round(_mm_to_px(height_mm)),
+    )
+    pdf_bytes = await _render_pdf(url, page_size, selector, margins, capture)
+    return pdf_bytes, capture.layout
+
+
+async def _render_pdf(
+    url: str,
+    page_size: str,
+    selector: str,
+    margins: Optional[dict],
+    capture: _LayoutCapture | None,
+) -> bytes:
+    """Shared body of ``render_resume_pdf`` and ``render_resume_layout``."""
     global _subprocess_supported
 
     pdf_format = _resolve_pdf_format(page_size)
@@ -1144,6 +1276,7 @@ async def render_resume_pdf(
 
         if _browser_is_connected(_browser) or subprocess_supported:
             try:
+                extra = {"capture": capture} if capture is not None else {}
                 return await _render_on_shared_browser(
                     url,
                     selector,
@@ -1151,6 +1284,7 @@ async def render_resume_pdf(
                     pdf_margins,
                     work_deadline,
                     total_deadline,
+                    **extra,
                 )
             except NotImplementedError:
                 with _subprocess_lock:
@@ -1158,8 +1292,9 @@ async def render_resume_pdf(
                 subprocess_supported = False
 
         if not subprocess_supported:
+            extra_worker = {"capture": capture} if capture is not None else {}
             worker = await _render_resume_pdf_in_thread(
-                url, selector, pdf_format, pdf_margins, total_deadline
+                url, selector, pdf_format, pdf_margins, total_deadline, **extra_worker
             )
             try:
                 return await _await_before_deadline(

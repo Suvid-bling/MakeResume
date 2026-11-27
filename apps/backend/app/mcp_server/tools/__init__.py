@@ -19,6 +19,7 @@ from app.mcp_server.tools.list_applications import list_applications
 from app.mcp_server.tools.list_resumes import list_resumes
 from app.mcp_server.tools.parse_check_file import parse_check_file
 from app.mcp_server.tools.parse_check_resume import parse_check_resume
+from app.mcp_server.tools.plan_content_budget import plan_content_budget
 from app.mcp_server.tools.recalculate_ats_score import recalculate_ats_score
 from app.mcp_server.tools.save_tailored_resume import save_tailored_resume
 from app.mcp_server.tools.score_resume import score_resume
@@ -47,6 +48,7 @@ READ_ONLY_TOOLS: list[Tool] = [
     score_resume,
     parse_check_file,
     parse_check_resume,
+    plan_content_budget,
     verify_resume,
     list_applications,
 ]

@@ -61,6 +61,48 @@ def _is_bullet(styles: Any, index: int) -> bool:
     return styles[index] != "plain"
 
 
+def _is_result(styles: Any, index: int) -> bool:
+    return (
+        isinstance(styles, list) and index < len(styles) and styles[index] == "result"
+    )
+
+
+def result_row_paths(data: dict[str, Any]) -> set[str]:
+    """Paths of the rows styled "result" (outcome rows under an action row)."""
+    paths: set[str] = set()
+    for section in ("workExperience", "personalProjects"):
+        entries = data.get(section)
+        if not isinstance(entries, list):
+            continue
+        for i, entry in enumerate(entries):
+            if not isinstance(entry, dict) or not isinstance(
+                entry.get("description"), list
+            ):
+                continue
+            styles = entry.get("descriptionStyles")
+            paths.update(
+                f"{section}[{i}].description[{j}]"
+                for j in range(len(entry["description"]))
+                if _is_result(styles, j)
+            )
+    return paths
+
+
+def outcome_covered_paths(data: dict[str, Any]) -> set[str]:
+    """Paths that must never be flagged ``no_outcome``.
+
+    A result row is the outcome itself, and an action row in an entry that has
+    a result row has its outcome stated there.
+    """
+    results = result_row_paths(data)
+    covered_entries = {_entry_key(path) for path in results}
+    return {
+        path
+        for path, _ in iter_writing_units(data)
+        if path in results or _entry_key(path) in covered_entries
+    }
+
+
 def iter_writing_units(data: dict[str, Any]) -> Iterator[tuple[str, str]]:
     """Yield (path, text) for the summary and every work and project bullet."""
     summary = data.get("summary")
@@ -118,6 +160,7 @@ def check_writing(data: dict[str, Any], language: str = "en") -> list[WritingFin
     english = language == "en"
     findings: list[WritingFinding] = []
     openers: dict[str, dict[str, list[str]]] = {}
+    results = result_row_paths(data)
     for path, text in iter_writing_units(data):
         excerpt = _excerpt(text)
 
@@ -142,7 +185,8 @@ def check_writing(data: dict[str, Any], language: str = "en") -> list[WritingFin
             add("long_bullet", "soft")
         if is_bullet and not _DIGIT_RE.search(text):
             add("no_metric", "soft")
-        if is_bullet:
+        # Result rows state an outcome, so they do not count as repeated openers.
+        if is_bullet and path not in results:
             word = _first_word(text)
             if word:
                 openers.setdefault(_entry_key(path), {}).setdefault(word, []).append(

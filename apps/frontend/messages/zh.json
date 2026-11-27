@@ -377,6 +377,9 @@
       "actions": {
         "addPoint": "添加要点",
         "togglePointStyle": "切换项目符号",
+        "pointStyleBullet": "动作行，点击切换为成果行",
+        "pointStyleResult": "成果行，点击切换为纯文本行",
+        "pointStylePlain": "纯文本行，点击切换为动作行",
         "reorderPoint": "拖动以重新排序要点"
       },
       "placeholders": {
@@ -517,6 +520,12 @@
         "sans": "无衬线",
         "mono": "等宽"
       },
+      "descriptionFormat": "描述格式",
+      "descriptionFormats": {
+        "bullet": "项目符号",
+        "text": "文本行"
+      },
+      "descriptionFormatHint": "项目符号会显示标记。文本行以 \"- \" 开头表示行动，以 \"-> \" 开头表示成果。",
       "options": "选项",
       "compactMode": "紧凑模式",
       "contactIcons": "联系方式图标",
@@ -909,6 +918,29 @@
       "unavailable": "无法进行页面适配",
       "finalOver": "改写后可能超出页数上限",
       "notRechecked": "改写后未重新检查是否符合页数上限"
+    },
+    "lengthFit": {
+      "title": "????",
+      "target": "?????{pages}",
+      "before": "????{pages} ???????? {fill}%",
+      "after": "???{pages} ???????? {fill}%",
+      "status": {
+        "fit": "????",
+        "over": "??????",
+        "under": "??????"
+      },
+      "aiCalls": "????????? AI?{count} ?",
+      "removedTitle": "????????",
+      "restoredTitle": "????????",
+      "fields": {
+        "technicalSkills": "??",
+        "awards": "??",
+        "certificationsTraining": "??",
+        "workExperience": "????"
+      },
+      "reviewTitle": "????",
+      "reviewHint": "???????????????????????????",
+      "reviewRow": "{entry}?? {line} ?"
     },
     "heavyWarning": "深度改写改动较大，更可能写出你没做过的事。保存前请逐行检查。",
     "createWarning": "直接生成模式会编写一份模拟简历：个人简介、职位名、工作经历要点和技能都是根据职位描述生成的，并非你的真实经历。请仅用于模拟练习，不要作为真实简历使用。",

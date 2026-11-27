@@ -16,7 +16,12 @@ from app.services.bullet_selector import (
     fit_to_page_limit,
     select_bullets,
 )
-from app.services.page_fit import measure_page_count, page_limit
+from app.services.page_fit import (
+    LayoutMeasurement,
+    measure_layout,
+    measure_page_count,
+    page_limit,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -91,7 +96,9 @@ async def run_bullet_selection(
         page_fit=status,
         final_pages=pages,
     )
-    return SelectionOutcome(data=data, summary=summary, warnings=warnings)
+    return SelectionOutcome(
+        data=data, summary=summary, warnings=warnings, scores=scores
+    )
 
 
 def _page_fit_deadline() -> float:
@@ -131,6 +138,33 @@ async def _measure_within_budget(
         raise  # a TimeoutError subclass, but it ends the operation, not just the render
     except TimeoutError as e:
         logger.warning("Draft page measurement exceeded its %.2fs budget", budget)
+        raise PageMeasureError("Draft render exceeded the operation budget") from e
+
+
+async def measure_layout_within_budget(
+    data: dict[str, Any],
+    page_fit: PageFitSettings,
+    *,
+    reserve_seconds: float = FINAL_CHECK_RESERVE_SECONDS,
+) -> LayoutMeasurement:
+    """Render ``data`` and measure its layout inside the operation budget.
+
+    Like ``_measure_within_budget``: ``reserve_seconds`` stays for the stages that
+    follow, and a render that outlives the budget raises PageMeasureError so a slow
+    machine degrades the length fit instead of failing the whole operation.
+    """
+    try:
+        budget = remaining_timeout() - reserve_seconds
+    except AIOperationDeadlineExceeded as e:
+        raise PageMeasureError("No operation budget left to render the draft") from e
+    if budget <= 0:
+        raise PageMeasureError("No operation budget left to render the draft")
+    try:
+        return await asyncio.wait_for(measure_layout(data, page_fit), budget)
+    except AIOperationDeadlineExceeded:
+        raise
+    except TimeoutError as e:
+        logger.warning("Draft layout measurement exceeded its %.2fs budget", budget)
         raise PageMeasureError("Draft render exceeded the operation budget") from e
 
 

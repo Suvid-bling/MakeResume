@@ -20,8 +20,8 @@ import type {
   ResumeFieldDiff,
 } from '@/components/common/resume_previewer_context';
 import type { ResumeData } from '@/components/dashboard/resume-component';
-import type { BulletSelectionSummary } from '@/lib/api/resume';
-import { locatePath, splitByKeywords } from '@/lib/utils/resume-paths';
+import type { BulletSelectionSummary, LengthFitSummary } from '@/lib/api/resume';
+import { lineAt, locatePath, splitByKeywords } from '@/lib/utils/resume-paths';
 
 interface DiffPreviewModalProps {
   isOpen: boolean;
@@ -33,6 +33,8 @@ interface DiffPreviewModalProps {
   detailedChanges?: ResumeFieldDiff[];
   errorMessage?: string;
   selectionSummary?: BulletSelectionSummary | null;
+  /** How the page target was met: pages, removed items, rows to review. */
+  lengthFit?: LengthFitSummary | null;
   /** The preview came from Heavy rewrite: warn to review every line. */
   heavyMode?: boolean;
   /** Keyword picker shown under the summary (the ATS keyword chips). */
@@ -56,6 +58,7 @@ export function DiffPreviewModal({
   detailedChanges,
   errorMessage,
   selectionSummary,
+  lengthFit,
   heavyMode = false,
   keywordPanel,
   placements,
@@ -145,7 +148,7 @@ export function DiffPreviewModal({
   const experienceChanges = detailedChanges.filter((c) => c.field_type === 'experience');
   const educationChanges = detailedChanges.filter((c) => c.field_type === 'education');
   const projectChanges = detailedChanges.filter((c) => c.field_type === 'project');
-  const languageChanges = detailedChanges.filter((c) => c.field_type === 'language');
+
   const awardChanges = detailedChanges.filter((c) => c.field_type === 'award');
 
   return (
@@ -228,6 +231,8 @@ export function DiffPreviewModal({
               </Alert>
             )}
           </div>
+
+          {lengthFit && <LengthFitPanel summary={lengthFit} resume={resume} />}
 
           {placements && placements.length > 0 && (
             <KeywordPlacementList
@@ -339,20 +344,6 @@ export function DiffPreviewModal({
               </ChangeSection>
             )}
 
-            {/* Language changes */}
-            {languageChanges.length > 0 && (
-              <ChangeSection
-                title={t('tailor.diffModal.languageChanges')}
-                count={languageChanges.length}
-                isExpanded={expandedSections.has('languages')}
-                onToggle={() => toggleSection('languages')}
-              >
-                {languageChanges.map((change, idx) => (
-                  <ChangeItem key={idx} change={change} highlight={highlighted} />
-                ))}
-              </ChangeSection>
-            )}
-
             {/* Award changes */}
             {awardChanges.length > 0 && (
               <ChangeSection
@@ -439,6 +430,153 @@ function formatSelectionSummary(
       ? t('tailor.pageFit.trimmed', { count: summary.trimmed_for_fit })
       : t(`tailor.pageFit.${summary.page_fit}`);
   return `${kept} · ${fit}`;
+}
+
+// Helper component: how the page target was met (pages, removed items, rows to review)
+function LengthFitPanel({
+  summary,
+  resume,
+}: {
+  summary: LengthFitSummary;
+  resume?: ResumeData | null;
+}) {
+  const { t } = useTranslations();
+  const measured =
+    summary.status === 'fit' || summary.status === 'over' || summary.status === 'under';
+  const hasContent =
+    measured ||
+    summary.dropped.length > 0 ||
+    summary.restored.length > 0 ||
+    summary.review_paths.length > 0;
+  if (!hasContent) return null;
+
+  const percent = (value?: number | null) => Math.round((value ?? 0) * 100);
+  const statusTone = {
+    fit: 'border-success bg-success-tint text-success',
+    over: 'border-destructive bg-destructive-tint text-destructive',
+    under: 'border-warning bg-warning-tint text-warning-text',
+  } as const;
+  const itemLabel = (field: string, text: string) =>
+    `${t(`tailor.lengthFit.fields.${field}`)}: ${text}`;
+  const reviewRows = summary.review_paths
+    .map((path) => ({ path, text: lineAt(resume, path), where: locatePath(resume, path) }))
+    .filter((row) => row.text);
+
+  return (
+    <section aria-labelledby="length-fit-heading" className="border-2 border-ink bg-white p-4">
+      <h3
+        id="length-fit-heading"
+        className="mb-3 font-mono text-sm font-bold uppercase tracking-wider text-ink"
+      >
+        {t('tailor.lengthFit.title')}
+      </h3>
+
+      {measured && summary.target_pages != null && (
+        <div className="space-y-2">
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="font-mono text-xs uppercase tracking-wider text-ink-soft">
+              {t('tailor.lengthFit.target', { pages: summary.target_pages })}
+            </span>
+            {summary.status !== 'unavailable' && summary.status !== 'skipped' && (
+              <span
+                className={`border px-2 py-1 font-mono text-xs font-bold uppercase tracking-wider ${statusTone[summary.status]}`}
+              >
+                {t(`tailor.lengthFit.status.${summary.status}`)}
+              </span>
+            )}
+          </div>
+          {summary.pages_before != null && (
+            <p className="font-mono text-xs tabular-nums text-ink-soft">
+              {t('tailor.lengthFit.before', {
+                pages: summary.pages_before,
+                fill: percent(summary.last_page_fill_before),
+              })}
+            </p>
+          )}
+          {summary.pages_after != null && (
+            <p className="font-mono text-xs tabular-nums text-ink">
+              {t('tailor.lengthFit.after', {
+                pages: summary.pages_after,
+                fill: percent(summary.last_page_fill_after),
+              })}
+            </p>
+          )}
+          {summary.ai_calls > 0 && (
+            <p className="font-mono text-xs tabular-nums text-ink-soft">
+              {t('tailor.lengthFit.aiCalls', { count: summary.ai_calls })}
+            </p>
+          )}
+        </div>
+      )}
+
+      {summary.dropped.length > 0 && (
+        <div className="mt-4">
+          <h4 className="mb-2 font-mono text-xs font-bold uppercase tracking-wider text-ink">
+            {t('tailor.lengthFit.removedTitle')} ({summary.dropped.length})
+          </h4>
+          <ul className="space-y-1">
+            {summary.dropped.map((item, idx) => (
+              <li
+                key={`${item.field}-${idx}`}
+                className="border border-ink bg-destructive-tint p-2 text-sm text-ink"
+              >
+                <span aria-hidden="true" className="mr-2 font-mono font-bold text-destructive">
+                  -
+                </span>
+                {itemLabel(item.field, item.text)}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {summary.restored.length > 0 && (
+        <div className="mt-4">
+          <h4 className="mb-2 font-mono text-xs font-bold uppercase tracking-wider text-ink">
+            {t('tailor.lengthFit.restoredTitle')} ({summary.restored.length})
+          </h4>
+          <ul className="space-y-1">
+            {summary.restored.map((item, idx) => (
+              <li
+                key={`${item.field}-${idx}`}
+                className="border border-ink bg-success-tint p-2 text-sm text-ink"
+              >
+                <span aria-hidden="true" className="mr-2 font-mono font-bold text-success">
+                  +
+                </span>
+                {itemLabel(item.field, item.text)}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {reviewRows.length > 0 && (
+        <div className="mt-4">
+          <h4 className="mb-1 flex items-center gap-2 font-mono text-xs font-bold uppercase tracking-wider text-warning-text">
+            <Warning className="size-4 shrink-0" aria-hidden="true" />
+            {t('tailor.lengthFit.reviewTitle')} ({reviewRows.length})
+          </h4>
+          <p className="mb-2 text-xs text-ink-soft">{t('tailor.lengthFit.reviewHint')}</p>
+          <ul className="space-y-2">
+            {reviewRows.map((row) => (
+              <li key={row.path} className="border border-ink bg-warning-tint p-2">
+                {row.where.kind === 'bullet' && (
+                  <p className="mb-1 font-mono text-xs uppercase tracking-wider text-ink-soft">
+                    {t('tailor.lengthFit.reviewRow', {
+                      entry: row.where.entry,
+                      line: row.where.line,
+                    })}
+                  </p>
+                )}
+                <p className="text-sm text-ink">{row.text}</p>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </section>
+  );
 }
 
 // Helper component: stat card

@@ -1,4 +1,5 @@
 import React from 'react';
+import type { DescriptionStyle } from '@/lib/utils/description-styles';
 import { Mail, Phone, Globe, Linkedin, Github, ExternalLink } from 'lucide-react';
 import type {
   ResumeData,
@@ -125,7 +126,7 @@ export const ResumeLatex: React.FC<ResumeLatexProps> = ({
     </>
   );
 
-  const renderBullets = (items?: string[], pointStyles?: ('bullet' | 'plain')[]) => (
+  const renderBullets = (items?: string[], pointStyles?: DescriptionStyle[]) => (
     <DescriptionList items={items} styles={pointStyles} />
   );
 
@@ -395,7 +396,7 @@ const AdditionalSection: React.FC<{
 const DynamicResumeSectionLatex: React.FC<{
   sectionMeta: SectionMeta;
   resumeData: ResumeData;
-  renderBullets: (items?: string[], pointStyles?: ('bullet' | 'plain')[]) => React.ReactNode;
+  renderBullets: (items?: string[], pointStyles?: DescriptionStyle[]) => React.ReactNode;
 }> = ({ sectionMeta, resumeData, renderBullets }) => {
   const customSection = resumeData.customSections?.[sectionMeta.key];
   if (!customSection) return null;

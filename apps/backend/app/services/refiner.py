@@ -852,9 +852,7 @@ def _extract_all_text(data: dict[str, Any]) -> str:
         certs = additional.get("certificationsTraining", [])
         if isinstance(certs, list):
             parts.extend(str(c) for c in certs)
-        languages = additional.get("languages", [])
-        if isinstance(languages, list):
-            parts.extend(str(lang) for lang in languages)
+        # "languages" is never rendered, so it does not count as keyword evidence.
         awards = additional.get("awards", [])
         if isinstance(awards, list):
             parts.extend(str(a) for a in awards)

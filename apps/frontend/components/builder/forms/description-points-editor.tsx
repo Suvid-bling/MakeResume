@@ -4,7 +4,7 @@ import React from 'react';
 import dynamic from 'next/dynamic';
 import { labelClass } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
-import { TextAlignLeft, ListBullets, Plus, Trash } from '@phosphor-icons/react';
+import { ArrowRight, TextAlignLeft, ListBullets, Plus, Trash } from '@phosphor-icons/react';
 import { useTranslations } from '@/lib/i18n';
 import {
   alignDescriptionStyles,
@@ -41,9 +41,16 @@ interface DescriptionPointsEditorProps {
   onChange: (patch: DescriptionPatch) => void;
 }
 
+const STYLE_LABEL_KEYS = {
+  bullet: 'builder.genericItemForm.actions.pointStyleBullet',
+  result: 'builder.genericItemForm.actions.pointStyleResult',
+  plain: 'builder.genericItemForm.actions.pointStylePlain',
+} as const satisfies Record<DescriptionStyle, string>;
+
 /**
  * Editable, reorderable description points of one entry (experience,
- * project or custom item), each a bullet or a plain line.
+ * project or custom item), each an action row (bullet), a result row or a
+ * plain line. The per-row button cycles bullet -> result -> plain.
  */
 export const DescriptionPointsEditor: React.FC<DescriptionPointsEditorProps> = ({
   id,
@@ -118,11 +125,13 @@ export const DescriptionPointsEditor: React.FC<DescriptionPointsEditorProps> = (
                 size="icon-sm"
                 onClick={() => handleToggleDescriptionStyle(idx)}
                 className="text-steel hover:text-primary self-end"
-                aria-label={t('builder.genericItemForm.actions.togglePointStyle')}
-                title={t('builder.genericItemForm.actions.togglePointStyle')}
+                aria-label={t(STYLE_LABEL_KEYS[style])}
+                title={t(STYLE_LABEL_KEYS[style])}
               >
                 {style === 'plain' ? (
                   <TextAlignLeft aria-hidden="true" />
+                ) : style === 'result' ? (
+                  <ArrowRight aria-hidden="true" />
                 ) : (
                   <ListBullets aria-hidden="true" />
                 )}

@@ -43,6 +43,8 @@ _SKILL_LABEL_RE = re.compile(r"^([^,:：，、]{1,40})(?::(?:\s+(.*))?|：\s*(.*
 _DISTINCTIVE_NUMBER_RE = re.compile(
     r"\d[\d,]*\.\d+|\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?\s*%|\d{2,}(?=\s*(?:x|s\b))"
 )
+# A result row of the text description format: "-> outcome" (also "→", "➜").
+_RESULT_ROW_RE = re.compile(r"^(?:->|→|➜)\s*")
 _ASCII_ALNUM_RE = re.compile(r"[A-Za-z0-9]")
 _CJK_RE = re.compile(r"[\u4e00-\u9fff]")
 # CJK terminators always end a sentence. An ASCII ".", "!" or "?" only ends one
@@ -167,14 +169,18 @@ def parse_style_sample(text: str) -> ParsedSample:
         elif section == "skills":
             skills_lines.append(stripped)
         elif section == "experience":
-            is_bullet = stripped.startswith("- ")
+            # A "- " row is an action row, a "-> " row (also "→", "➜") a result row.
+            # Both are rows of the entry; a result row is never an entry header.
+            result_match = _RESULT_ROW_RE.match(stripped)
+            is_bullet = stripped.startswith("- ") or result_match is not None
             if leading_spaces > 0 and not is_bullet:
                 # Continuation of the previous bullet.
                 if cur_bullets:
                     cur_bullets[-1] = _join_continuation(cur_bullets[-1], stripped)
                 continue
             if is_bullet:
-                cur_bullets.append(stripped[2:].strip())
+                body = stripped[result_match.end() :] if result_match else stripped[2:]
+                cur_bullets.append(body.strip())
                 state = "in_bullets"
                 continue
             if state == "in_bullets":

@@ -216,30 +216,79 @@ def _novel_numbers(source: str, candidate: str) -> bool:
     )
 
 
+_ARROW_PREFIX_RE = re.compile(r"^\s*(?:->|→|➜)")
+_ROW_PREFIX_RE = re.compile(r"^\s*(?:->|→|➜|[-*•‣◦▪▫]+|\d+[.)])\s*")
+# bullet (action) and result rows are interchangeable; plain stays plain.
+_MARKED_STYLES = {"bullet", "result"}
+_KNOWN_STYLES = {"bullet", "result", "plain"}
+
+
 def _normalized_candidate_rows(
-    value: Any, *, one_row_per_item: bool = False
-) -> list[str]:
+    value: Any,
+    *,
+    one_row_per_item: bool = False,
+    styles: Any = None,
+) -> tuple[list[str], list[str | None]]:
     """Mirror ResumeData's newline and bullet cleanup before preservation.
 
     With ``one_row_per_item`` a multi-line item is collapsed into a single row,
     so a rewrite of one harness-chosen bullet can never displace another.
+
+    Returns the cleaned rows and, per row, the style the candidate asked for:
+    "result" for a row written with an arrow prefix, else the candidate's own
+    ``descriptionStyles`` entry for the first row of an item (when ``styles`` is
+    a list aligned one-to-one with ``value``), else ``None``.
     """
     if not isinstance(value, list):
-        return []
+        return [], []
+    aligned = styles if isinstance(styles, list) and len(styles) == len(value) else None
     rows: list[str] = []
-    for item in value:
+    hints: list[str | None] = []
+    for item_index, item in enumerate(value):
         if not isinstance(item, str):
             continue
+        item_style = aligned[item_index] if aligned is not None else None
+        if item_style not in _KNOWN_STYLES:
+            item_style = None
         lines: list[str] = []
-        for raw_line in re.split(r"\r?\n+", item):
-            line = re.sub(r"^\s*(?:[-*•‣◦▪▫]+|\d+[.)])\s*", "", raw_line).strip()
+        line_hints: list[str | None] = []
+        for line_index, raw_line in enumerate(re.split(r"\r?\n+", item)):
+            line = _ROW_PREFIX_RE.sub("", raw_line).strip()
             if line:
                 lines.append(line)
+                if _ARROW_PREFIX_RE.match(raw_line) and item_style != "plain":
+                    line_hints.append("result")
+                else:
+                    line_hints.append(item_style if line_index == 0 else None)
         if one_row_per_item and lines:
             rows.append(" ".join(lines))
+            hints.append(line_hints[0])
         else:
             rows.extend(lines)
-    return rows
+            hints.extend(line_hints)
+    return rows, hints
+
+
+def _row_style(
+    source_styles: list[Any],
+    source_index: int,
+    hint: str | None = None,
+    *,
+    trust_hint: bool = False,
+) -> str:
+    """Style of a kept row: the source's, except bullet/result may swap.
+
+    With ``trust_hint`` (length-fit mode, where rows are rewritten wholesale and the
+    best-matching source row is only a guess) the candidate's own style wins.
+    """
+    if trust_hint and hint in _KNOWN_STYLES:
+        return str(hint)
+    source = source_styles[source_index] if source_index < len(source_styles) else None
+    if source not in _KNOWN_STYLES:
+        source = "bullet"
+    if source in _MARKED_STYLES and hint in _MARKED_STYLES:
+        return str(hint)
+    return str(source)
 
 
 def _best_source_row(
@@ -263,14 +312,17 @@ def _merge_description_rows(
     allow_review_claims: bool,
     allow_appended_rows: bool,
     fixed_rows: bool = False,
+    length_fit: bool = False,
 ) -> tuple[list[str], list[str]]:
     source_rows = source_entry.get("description")
     candidate_rows = candidate_entry.get("description")
     if not isinstance(source_rows, list):
         return [], []
     source_text = " ".join(str(row) for row in source_rows)
-    candidate_list = _normalized_candidate_rows(
-        candidate_rows, one_row_per_item=fixed_rows
+    candidate_list, candidate_hints = _normalized_candidate_rows(
+        candidate_rows,
+        one_row_per_item=fixed_rows,
+        styles=candidate_entry.get("descriptionStyles"),
     )
     source_styles = source_entry.get("descriptionStyles")
     styles = source_styles if isinstance(source_styles, list) else []
@@ -299,22 +351,24 @@ def _merge_description_rows(
             candidate_row = source_row
         merged_rows.append(candidate_row)
         merged_styles.append(
-            styles[source_index]
-            if source_index < len(styles)
-            and styles[source_index] in {"bullet", "plain"}
-            else "bullet"
+            _row_style(
+                styles,
+                source_index,
+                None if requires_restore else candidate_hints[candidate_index],
+                trust_hint=length_fit,
+            )
         )
 
-    for source_index in sorted(available):
-        merged_rows.append(str(source_rows[source_index]))
-        merged_styles.append(
-            styles[source_index]
-            if source_index < len(styles)
-            and styles[source_index] in {"bullet", "plain"}
-            else "bullet"
-        )
+    # Length-fit mode lets an entry shrink, so rows the candidate left out stay out.
+    # An entry never ends up empty.
+    if not length_fit or not merged_rows:
+        for source_index in sorted(available):
+            merged_rows.append(str(source_rows[source_index]))
+            merged_styles.append(_row_style(styles, source_index))
     if allow_appended_rows:
-        for candidate_row in candidate_list[len(source_rows) :]:
+        for appended_index, candidate_row in enumerate(
+            candidate_list[len(source_rows) :], start=len(source_rows)
+        ):
             match = _best_source_row(
                 candidate_row, source_rows, set(range(len(source_rows)))
             )
@@ -324,7 +378,11 @@ def _merge_description_rows(
             ):
                 continue
             merged_rows.append(candidate_row)
-            merged_styles.append("bullet")
+            hint = candidate_hints[appended_index]
+            if length_fit and hint in _KNOWN_STYLES:
+                merged_styles.append(str(hint))
+            else:
+                merged_styles.append("result" if hint == "result" else "bullet")
     return merged_rows, merged_styles
 
 
@@ -333,14 +391,21 @@ def _description_contract_preserved(
     candidate_entry: dict[str, Any],
     *,
     allow_appended_rows: bool = False,
+    length_fit: bool = False,
 ) -> bool:
     source_rows = source_entry.get("description")
     candidate_rows = candidate_entry.get("description")
     if not isinstance(source_rows, list):
         return True
-    if not isinstance(candidate_rows, list) or len(candidate_rows) < len(source_rows):
+    if not isinstance(candidate_rows, list):
         return False
-    if not allow_appended_rows and len(candidate_rows) != len(source_rows):
+    if length_fit:
+        # Fewer or more rows are fine, as long as a non-empty entry keeps a row.
+        if source_rows and not candidate_rows:
+            return False
+    elif len(candidate_rows) < len(source_rows):
+        return False
+    elif not allow_appended_rows and len(candidate_rows) != len(source_rows):
         return False
     if "descriptionStyles" not in source_entry:
         return True
@@ -350,6 +415,12 @@ def _description_contract_preserved(
         return False
     if len(candidate_styles) != len(candidate_rows):
         return False
+    if length_fit:
+        # Rows are rewritten wholesale, so the style of a row is the author's call.
+        return all(
+            isinstance(row, str) and style in _KNOWN_STYLES
+            for row, style in zip(candidate_rows, candidate_styles)
+        )
 
     available = set(range(len(source_rows)))
     for candidate_index, candidate_row in enumerate(candidate_rows[: len(source_rows)]):
@@ -363,10 +434,14 @@ def _description_contract_preserved(
         expected_style = (
             source_styles[source_index]
             if source_index < len(source_styles)
-            and source_styles[source_index] in {"bullet", "plain"}
+            and source_styles[source_index] in _KNOWN_STYLES
             else "bullet"
         )
-        if candidate_styles[candidate_index] != expected_style:
+        actual_style = candidate_styles[candidate_index]
+        if expected_style in _MARKED_STYLES:
+            if actual_style not in _MARKED_STYLES:
+                return False
+        elif actual_style != expected_style:
             return False
     return True
 
@@ -379,6 +454,7 @@ def _merge_entries(
     allow_review_claims: bool,
     allow_appended_rows: bool,
     fixed_rows: bool = False,
+    length_fit: bool = False,
 ) -> list[dict[str, Any]]:
     if not isinstance(source_entries, list):
         return []
@@ -417,6 +493,7 @@ def _merge_entries(
                 allow_review_claims=allow_review_claims,
                 allow_appended_rows=allow_appended_rows,
                 fixed_rows=fixed_rows,
+                length_fit=length_fit,
             )
             merged["description"] = rows
             if has_style_metadata:
@@ -450,7 +527,50 @@ def _merge_entries(
     return result
 
 
-def _merge_additional(source: Any, candidate: Any) -> dict[str, list[str]]:
+def _length_fit_items(
+    field: str, source_items: list[str], candidate_items: list[str]
+) -> list[str]:
+    """One Additional field when the candidate may drop items: nothing is re-added."""
+    remaining_source = Counter(_normalized(item) for item in source_items)
+    if field != "technicalSkills":
+        kept: list[str] = []
+        for item in candidate_items:
+            key = _normalized(item)
+            if remaining_source[key] > 0:
+                kept.append(item)
+                remaining_source[key] -= 1
+        return kept
+    if not has_skill_row_layout(source_items):
+        return list(candidate_items)
+    remaining_candidate = Counter(_normalized(item) for item in candidate_items)
+    present: list[str] = []
+    for item in source_items:
+        key = _normalized(item)
+        if remaining_candidate[key] > 0:
+            present.append(item)
+            remaining_candidate[key] -= 1
+    added: list[str] = []
+    remaining_source = Counter(_normalized(item) for item in source_items)
+    for item in candidate_items:
+        key = _normalized(item)
+        if remaining_source[key] > 0:
+            remaining_source[key] -= 1
+        else:
+            added.append(item)
+    if added and skills_end_in_open_label(present):
+        added.insert(0, SKILL_ROW_BREAK)
+    return [*present, *added]
+
+
+def _merge_additional(
+    source: Any, candidate: Any, *, length_fit: bool = False
+) -> dict[str, list[str]]:
+    """Keep the source's Additional items in the candidate.
+
+    With ``length_fit`` the candidate may drop any item (to fit the page target). It
+    still cannot add awards, certifications or languages, and skills keep the source's
+    row order when the source laid them out in rows.
+    """
     source_dict = source if isinstance(source, dict) else {}
     candidate_dict = candidate if isinstance(candidate, dict) else {}
     result: dict[str, list[str]] = {}
@@ -461,6 +581,9 @@ def _merge_additional(source: Any, candidate: Any) -> dict[str, list[str]]:
         candidate_items = [
             item for item in candidate_dict.get(field, []) if isinstance(item, str)
         ]
+        if length_fit:
+            result[field] = _length_fit_items(field, source_items, candidate_items)
+            continue
         if field != "technicalSkills":
             remaining_source_items = Counter(_normalized(item) for item in source_items)
             preserved_candidate_items: list[str] = []
@@ -505,6 +628,7 @@ def _merge_custom_sections(
     *,
     allow_review_claims: bool,
     allow_appended_rows: bool,
+    length_fit: bool = False,
 ) -> dict[str, Any]:
     if not isinstance(source, dict):
         return {}
@@ -529,6 +653,7 @@ def _merge_custom_sections(
             "customItems",
             allow_review_claims=allow_review_claims,
             allow_appended_rows=allow_appended_rows,
+            length_fit=length_fit,
         )
         result[key] = merged_section
     return result
@@ -541,6 +666,7 @@ def finalize_ai_resume(
     allow_review_claims: bool = True,
     allow_appended_rows: bool = False,
     fixed_row_sections: tuple[str, ...] = (),
+    length_fit: bool = False,
 ) -> dict[str, Any]:
     """Return a non-mutating AI result that preserves the source contract.
 
@@ -549,7 +675,14 @@ def finalize_ai_resume(
     extra rows, missing sections and identity drift are always repaired.
     Entries in ``fixed_row_sections`` never keep appended rows, and a multi-line
     rewrite of one of their rows stays one row.
+
+    ``length_fit`` is for a resume rewritten to fit a page target: the candidate may
+    drop skills, awards, certifications and languages, and an entry may have fewer
+    (or, with ``allow_appended_rows`` implied, more) rows. Numbers that are not in the
+    source entry, new awards or certifications, personalInfo and company, title and
+    date changes are still repaired.
     """
+    allow_appended_rows = allow_appended_rows or length_fit
     result = copy.deepcopy(candidate) if isinstance(candidate, dict) else {}
     result["personalInfo"] = copy.deepcopy(source.get("personalInfo", {}))
     source_summary = source.get("summary")
@@ -573,15 +706,17 @@ def finalize_ai_resume(
             allow_appended_rows=allow_appended_rows
             and section not in fixed_row_sections,
             fixed_rows=section in fixed_row_sections,
+            length_fit=length_fit,
         )
     result["additional"] = _merge_additional(
-        source.get("additional"), result.get("additional")
+        source.get("additional"), result.get("additional"), length_fit=length_fit
     )
     result["customSections"] = _merge_custom_sections(
         source.get("customSections"),
         result.get("customSections"),
         allow_review_claims=allow_review_claims,
         allow_appended_rows=allow_appended_rows,
+        length_fit=length_fit,
     )
     if "sectionMeta" in source:
         result["sectionMeta"] = copy.deepcopy(source["sectionMeta"])
@@ -615,6 +750,7 @@ def _entry_bucket_violation(
     section: str,
     *,
     allow_appended_rows: bool,
+    length_fit: bool = False,
 ) -> str | None:
     """Validate one identity bucket using the finalizer's content matching."""
     available = set(range(len(source_entries)))
@@ -635,6 +771,7 @@ def _entry_bucket_violation(
             source_entry,
             candidate_entry,
             allow_appended_rows=allow_appended_rows,
+            length_fit=length_fit,
         ):
             return "descriptions"
     return None
@@ -645,8 +782,15 @@ def validate_confirmed_resume(
     candidate: dict[str, Any],
     *,
     allow_appended_rows: bool = False,
+    length_fit: bool = False,
 ) -> list[str]:
-    """Return stable source-contract violation codes for a confirm payload."""
+    """Return stable source-contract violation codes for a confirm payload.
+
+    ``length_fit`` lets the candidate drop skills, awards, certifications and
+    languages and keep fewer (or more) rows per entry. It still reports added awards,
+    certifications or languages, changed entries and a work entry left without rows.
+    """
+    allow_appended_rows = allow_appended_rows or length_fit
     violations: list[str] = []
     if (
         isinstance(source.get("summary"), str)
@@ -670,6 +814,7 @@ def validate_confirmed_resume(
                 candidate_entries,
                 section,
                 allow_appended_rows=allow_appended_rows,
+                length_fit=length_fit,
             )
             if violation is not None:
                 violations.append(f"{section}.{violation}")
@@ -716,6 +861,7 @@ def validate_confirmed_resume(
                     candidate_map[identity],
                     "customItems",
                     allow_appended_rows=allow_appended_rows,
+                    length_fit=length_fit,
                 )
                 if violation is not None:
                     violations.append(f"customSections.{key}.{violation}")
@@ -744,7 +890,7 @@ def validate_confirmed_resume(
             )
             missing = source_items - candidate_items
             extras = candidate_items - source_items
-            if missing or (field != "technicalSkills" and extras):
+            if (missing and not length_fit) or (field != "technicalSkills" and extras):
                 violations.append(f"additional.{field}")
     return list(dict.fromkeys(violations))
 

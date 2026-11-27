@@ -30,6 +30,7 @@ from app.services.writing_quality import (
     fact_violations,
     hard_paths,
     iter_writing_units,
+    outcome_covered_paths,
     path_for_original,
     scrub_em_dashes,
     writing_score,
@@ -99,11 +100,17 @@ async def critique_writing(
         schema_type="diff",
         response_validator=_validate_critique,
     )
-    return {
-        item["path"]: item
-        for item in _validate_critique(result)["bullets"]
-        if item["path"] in known
-    }
+    # An entry with a result row states its outcome there, so an action row in
+    # it is never "no_outcome" and a result row is the outcome itself.
+    covered = outcome_covered_paths(data)
+    critic: dict[str, dict[str, Any]] = {}
+    for item in _validate_critique(result)["bullets"]:
+        if item["path"] not in known:
+            continue
+        if item["path"] in covered:
+            item = {**item, "no_outcome": False}
+        critic[item["path"]] = item
+    return critic
 
 
 async def rewrite_writing(

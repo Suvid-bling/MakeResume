@@ -75,12 +75,14 @@ from app.schemas import (
     UpdateTitleRequest,
     normalize_resume_data,
 )
-from app.schemas.models import ResumeTemplate
+from app.schemas.models import LengthFitSummary, ResumeTemplate
 from app.schemas.refinement import RefinementConfig
 from app.schemas.writing import ApplyKeywordsRequest
 from app.schemas.writing_report import WritingReport
 from app.services.ats import compute_ats_score
+from app.services.budget_acceptance import accept_rewrite_rows, rewrites_from_changes
 from app.services.bullet_selector import SELECTABLE_SECTIONS
+from app.services.content_budget import ContentBudget, render_style_caps
 from app.services.cover_letter import (
     generate_cover_letter,
     generate_outreach_message,
@@ -100,6 +102,16 @@ from app.services.improver import (
 )
 from app.services.interview_prep import generate_interview_prep
 from app.services.keyword_forcing import force_keywords, keyword_placements
+from app.services.length_fit import RewriteRequest
+from app.services.length_flow import (
+    LengthPlan,
+    build_row_restore,
+    effective_description_format,
+    plan_length,
+    remap_scores,
+    run_create_length_fit,
+    run_tailor_length_fit,
+)
 from app.services.page_fit import page_limit, render_drafts, resume_print_url
 from app.services.parser import (
     MAX_EXTRACTED_TEXT_BYTES,
@@ -126,6 +138,7 @@ from app.services.resume_creator import (
     generate_created_content,
     merge_created_content,
     render_writing_style_rule,
+    repair_created_length,
     revert_style_drift,
 )
 from app.services.resume_preservation import (
@@ -717,6 +730,7 @@ def _validate_confirm_payload(
     improved_data: dict[str, Any],
     *,
     allow_appended_rows: bool = False,
+    length_fit: bool = False,
 ) -> None:
     if not original_data:
         logger.warning(
@@ -748,7 +762,10 @@ def _validate_confirm_payload(
     if mismatches:
         raise ValueError(f"personalInfo fields changed: {', '.join(mismatches)}")
     preservation_violations = validate_confirmed_resume(
-        original_data, improved_data, allow_appended_rows=allow_appended_rows
+        original_data,
+        improved_data,
+        allow_appended_rows=allow_appended_rows,
+        length_fit=length_fit,
     )
     if preservation_violations:
         raise ValueError(
@@ -1441,6 +1458,8 @@ async def _improve_preview_flow(
 
     source_content = resume["content"]
     bullet_selection = None
+    full_master_data = original_resume_data  # before bullet selection trims it
+    selection_scores: dict[tuple[str, int, int], float] = {}
     if original_resume_data and (
         request.max_bullets_per_entry is not None or request.page_fit is not None
     ):
@@ -1458,9 +1477,64 @@ async def _improve_preview_flow(
         original_resume_data = selection.data
         source_content = json.dumps(original_resume_data, ensure_ascii=False)
         bullet_selection = selection.summary
+        selection_scores = selection.scores
         response_warnings.extend(selection.warnings)
     # Rewriting must not add bullets to the entries whose bullet set was chosen.
     fixed_row_sections = SELECTABLE_SECTIONS if bullet_selection is not None else ()
+
+    # Content budget: measure the real layout, drop what the page target needs, and
+    # plan each work entry's length. The budget text rides in the first generation
+    # prompt below, so it costs no extra AI call.
+    target_pages = (
+        page_limit(request.page_fit, request.max_pages)
+        if request.page_fit is not None
+        else None
+    )
+    description_format = effective_description_format(
+        request.description_format, request.page_fit
+    )
+    length_plan: LengthPlan | None = None
+    pre_plan_data = original_resume_data  # after bullet selection, before the budget
+    if original_resume_data and (
+        target_pages is not None or description_format == "text"
+    ):
+        progress["stage"] = "plan_content_budget"
+        try:
+            length_plan = await plan_length(
+                original_resume_data,
+                page_fit=request.page_fit,
+                target_pages=target_pages,
+                description_format=description_format,
+                job_keywords=job_keywords,
+                job_description=job["content"],
+                scores=(
+                    remap_scores(
+                        original_resume_data, full_master_data, selection_scores
+                    )
+                    if selection_scores
+                    else None
+                ),
+            )
+        except (AIOperationDeadlineExceeded, PromptSizeError):
+            raise
+        except Exception as e:
+            logger.warning("Content budget failed, continuing without it: %s", e)
+    length_budget_text = length_plan.block if length_plan is not None else ""
+    if (
+        length_plan is not None
+        and length_plan.budget is not None
+        and length_budget_text
+    ):
+        # The budget's paths and row counts refer to this version of the resume
+        # (Skills dropped to reach the page target, least relevant bullets removed
+        # first), so every later step starts from it.
+        original_resume_data = length_plan.planned_data
+        source_content = json.dumps(original_resume_data, ensure_ascii=False)
+    elif length_plan is not None and length_plan.dropped:
+        original_resume_data = length_plan.data
+        source_content = json.dumps(original_resume_data, ensure_ascii=False)
+    budget_for_loop = length_plan.budget if length_plan is not None else None
+    length_review_paths: list[str] = []
 
     # Diff-based improvement: generate targeted changes, apply with verification
     if original_resume_data:
@@ -1496,6 +1570,9 @@ async def _improve_preview_flow(
             response_warnings.append("Skill target planning failed")
 
         progress["stage"] = "generate_resume_diffs"
+        diff_kwargs: dict[str, Any] = {}
+        if length_budget_text:
+            diff_kwargs["length_budget"] = length_budget_text
         diff_result = await generate_resume_diffs(
             original_resume=source_content,
             job_description=job["content"],
@@ -1505,15 +1582,32 @@ async def _improve_preview_flow(
             original_resume_data=original_resume_data,
             skill_targets=skill_targets,
             fixed_row_sections=fixed_row_sections,
+            **diff_kwargs,
         )
 
         progress["stage"] = "apply_resume_diffs"
+        rewrite_paths: set[str] = set()
+        if length_plan is not None and length_plan.budget is not None:
+            # Whole-entry rewrites (expand, condense, restructure) are checked per
+            # entry and merged into the source first: inserting rows in the middle of
+            # an entry would break row-by-row preservation, so the merged rows become
+            # the source the rest of the flow (and confirm) compares against.
+            acceptance = accept_rewrite_rows(
+                original_resume_data,
+                rewrites_from_changes(diff_result.changes),
+                length_plan.budget,
+                master=full_master_data,
+            )
+            original_resume_data = acceptance.data
+            rewrite_paths = set(acceptance.accepted)
+            length_review_paths.extend(acceptance.review_paths)
         improved_data, applied_changes, rejected_changes = apply_diffs(
             original=original_resume_data,
             changes=diff_result.changes,
             allowed_skill_targets=skill_targets,
             fixed_row_sections=fixed_row_sections,
             allow_bullet_reorder=prompt_id == "heavy",
+            rewrite_paths=rewrite_paths,
         )
         allow_appended_rows = any(
             change.action == "append" for change in applied_changes
@@ -1608,7 +1702,13 @@ async def _improve_preview_flow(
             response_warnings.append(REFINEMENT_FAILED_WARNING)
 
     improved_data, writing = await _run_tailor_writing_loop(
-        improved_data, language, prompt_id, progress
+        improved_data,
+        language,
+        prompt_id,
+        progress,
+        style_rule=_length_style_rule(
+            budget_for_loop, number=7 if prompt_id == "heavy" else 6
+        ),
     )
 
     if original_resume_data:
@@ -1629,8 +1729,70 @@ async def _improve_preview_flow(
                 job_keywords,
             )
 
+    # The preview registers the source it was built from (as bullet selection and
+    # create mode already do), so confirm validates against it. Without a budget or
+    # a selection the source is still the master itself.
+    registered_source: dict[str, Any] | None = (
+        original_resume_data
+        if bullet_selection is not None or original_resume_data is not pre_plan_data
+        else None
+    )
+    length_fit: LengthFitSummary | None = None
+    length_fit_ran = False
+    if original_resume_data and length_plan is not None and length_plan.target_pages:
+        progress["stage"] = "fit_resume_length"
+        row_restore = (
+            build_row_restore(full_master_data, pre_plan_data, selection_scores)
+            if (
+                bullet_selection is not None
+                and request.max_bullets_per_entry is None
+                and bullet_selection.trimmed_for_fit > 0
+            )
+            else None
+        )
+        try:
+            fit = await run_tailor_length_fit(
+                improved_data,
+                source=original_resume_data,
+                plan=length_plan,
+                page_fit=request.page_fit,
+                job_description=job["content"],
+                job_keywords=job_keywords,
+                language=language,
+                master=full_master_data,
+                generate_diffs=generate_resume_diffs,
+                row_restore=row_restore,
+            )
+        except (AIOperationDeadlineExceeded, PromptSizeError):
+            raise
+        except Exception as e:
+            logger.warning("Length fit failed, keeping the generated resume: %s", e)
+            fit = None
+        if fit is not None and fit.summary.status != "unavailable":
+            length_fit_ran = True
+            improved_data = fit.data
+            registered_source = fit.source
+            length_fit = fit.summary
+            length_review_paths.extend(fit.summary.review_paths)
+            if bullet_selection is not None and fit.layout is not None:
+                bullet_selection.final_check = "ok"
+                bullet_selection.final_pages = fit.layout.pages
+            if fit.summary.status == "over":
+                response_warnings.append(PAGE_FIT_FINAL_OVER_WARNING)
+        elif fit is not None:
+            length_fit = fit.summary
+    if length_fit is not None:
+        length_fit.review_paths = list(dict.fromkeys(length_review_paths))
+    elif length_review_paths:
+        length_fit = LengthFitSummary(
+            target_pages=target_pages,
+            status="skipped",
+            review_paths=list(dict.fromkeys(length_review_paths)),
+        )
+
     if (
-        bullet_selection is not None
+        not length_fit_ran
+        and bullet_selection is not None
         and request.page_fit is not None
         and bullet_selection.page_fit in ("fits", "trimmed")
     ):
@@ -1660,13 +1822,15 @@ async def _improve_preview_flow(
         prompt_id=prompt_id,
         ttl_seconds=settings.preview_ttl_seconds,
         improvements=improvements,
-        source_data=original_resume_data if bullet_selection is not None else None,
+        source_data=registered_source,
     )
     progress["stage"] = "calculate_diff"
+    # Diffed against the data before the budget, so dropped Skills and rewritten
+    # entries show up as changes in the preview.
     diff_summary, detailed_changes, diff_error = _calculate_diff_from_resume(
         resume,
         improved_data,
-        original_resume_data,
+        pre_plan_data,
     )
     if diff_error:
         response_warnings.append(DIFF_UNAVAILABLE_WARNING)
@@ -1704,6 +1868,7 @@ async def _improve_preview_flow(
                 refinement_successful,
             ),
             bullet_selection=bullet_selection,
+            length_fit=length_fit,
             writing=finalized_writing_report(
                 writing, improved_data, language, original_resume_data
             ),
@@ -1769,15 +1934,49 @@ async def _create_preview_flow(
         request.max_bullets_per_entry,
     )
 
+    # Content budget: planned on the master's measured layout, written into the
+    # first generation prompt in place of the sample's bullet counts. Create mode
+    # expands under every existing entry and needs no master grounding.
+    target_pages = (
+        page_limit(request.page_fit, request.max_pages)
+        if request.page_fit is not None
+        else None
+    )
+    description_format = effective_description_format(
+        request.description_format, request.page_fit
+    )
+    create_plan: LengthPlan | None = None
+    if target_pages is not None or description_format == "text":
+        progress["stage"] = "plan_content_budget"
+        try:
+            create_plan = await plan_length(
+                master_data,
+                page_fit=request.page_fit,
+                target_pages=target_pages,
+                description_format=description_format,
+                job_keywords=job_keywords,
+                job_description=job["content"],
+                drop_skills=False,
+            )
+        except (AIOperationDeadlineExceeded, PromptSizeError):
+            raise
+        except Exception as e:
+            logger.warning("Content budget failed, continuing without it: %s", e)
+    # The skeleton the content is written for (Awards and Certifications dropped to
+    # reach the page target are gone from it; the skills are written fresh).
+    skeleton_data = create_plan.data if create_plan is not None else master_data
+    create_budget = create_plan.budget if create_plan is not None else None
+
     progress["stage"] = "generate_created_resume"
     draft, checks = await generate_created_content(
-        master_data=master_data,
+        master_data=skeleton_data,
         job_description=job["content"],
         job_keywords=job_keywords,
         sample_text=sample.text,
         profile=profile,
         language=language,
         max_bullets_per_entry=request.max_bullets_per_entry,
+        **({"budget": create_budget} if create_budget is not None else {}),
     )
 
     role_title = ""
@@ -1785,7 +1984,7 @@ async def _create_preview_flow(
     if isinstance(raw_role, str):
         role_title = raw_role.strip()
     created_data = merge_created_content(
-        master_data,
+        skeleton_data,
         draft,
         role_title=role_title,
         max_bullets_per_entry=request.max_bullets_per_entry,
@@ -1808,6 +2007,7 @@ async def _create_preview_flow(
 
     pre_writing_data = copy.deepcopy(created_data)
     style_rule = render_writing_style_rule(profile, same_language=same_language)
+    style_rule += _length_style_rule(create_budget, number=7 if style_rule else 6)
     loop = await run_writing_loop(
         created_data,
         language=language,
@@ -1823,9 +2023,7 @@ async def _create_preview_flow(
         created_data = revert_style_drift(
             pre_writing_data, created_data, rewritten_paths, profile
         )
-    logger.info(
-        "Create mode writing loop: %d line(s) rewritten", len(rewritten_paths)
-    )
+    logger.info("Create mode writing loop: %d line(s) rewritten", len(rewritten_paths))
 
     # Canonicalize exactly as the confirm endpoint will re-derive it from this
     # same dict used as source_data, so the preservation check there is a
@@ -1834,20 +2032,65 @@ async def _create_preview_flow(
         finalize_ai_resume(created_data, created_data, allow_appended_rows=True)
     ).model_dump()
 
-    if request.page_fit is not None:
+    # Length safety net: measure the finished resume and fix a page-target miss
+    # (Skills/Awards/Certifications first, then at most one repair call per round).
+    length_fit: LengthFitSummary | None = None
+    final_pages: int | None = None
+    if create_plan is not None and create_plan.target_pages and request.page_fit:
+        progress["stage"] = "fit_resume_length"
+
+        async def repair(rewrite_request: RewriteRequest) -> dict[str, Any] | None:
+            return await repair_created_length(
+                data=rewrite_request.data,
+                layout=rewrite_request.layout,
+                status=rewrite_request.status,
+                target_pages=rewrite_request.target_pages,
+                profile=profile,
+                sample_text=sample.text,
+                job_description=job["content"],
+                job_keywords=job_keywords,
+                language=language,
+                max_bullets_per_entry=request.max_bullets_per_entry,
+                description_format=description_format,
+            )
+
+        try:
+            fitted, fit_summary, fit_layout = await run_create_length_fit(
+                created_data,
+                plan=create_plan,
+                page_fit=request.page_fit,
+                job_description=job["content"],
+                job_keywords=job_keywords,
+                repair=repair,
+            )
+        except (AIOperationDeadlineExceeded, PromptSizeError):
+            raise
+        except Exception as e:
+            logger.warning("Length fit failed, keeping the generated resume: %s", e)
+            fitted, fit_summary, fit_layout = created_data, None, None
+        if fit_summary is not None and fit_summary.status != "unavailable":
+            length_fit = fit_summary
+            if fit_layout is not None:
+                final_pages = fit_layout.pages
+            if fitted is not created_data:
+                created_data = ResumeData.model_validate(
+                    finalize_ai_resume(fitted, fitted, allow_appended_rows=True)
+                ).model_dump()
+
+    if final_pages is None and request.page_fit is not None:
         progress["stage"] = "final_page_check"
         final_pages = await final_page_check(created_data, request.page_fit)
-        if final_pages is not None:
-            limit = page_limit(request.page_fit, request.max_pages)
-            if limit is not None and final_pages > limit:
-                checks.append(
-                    CreateCheckItem(
-                        code="page_over",
-                        severity="warning",
-                        path=None,
-                        detail=f"Generated resume runs to {final_pages} page(s), over the {limit}-page limit.",
-                    )
+    if final_pages is not None and request.page_fit is not None:
+        limit = page_limit(request.page_fit, request.max_pages)
+        if limit is not None and final_pages > limit:
+            checks.append(
+                CreateCheckItem(
+                    code="page_over",
+                    severity="warning",
+                    path=None,
+                    detail=f"Generated resume runs to {final_pages} page(s), over the {limit}-page limit.",
                 )
+            )
 
     progress["stage"] = "register_preview"
     improvements = generate_improvements(job_keywords)
@@ -1900,6 +2143,7 @@ async def _create_preview_flow(
             diff_summary=diff_summary,
             detailed_changes=detailed_changes,
             ats_score=_ats_score_model(created_data, job_keywords, None),
+            length_fit=length_fit,
             writing=finalized_writing_report(
                 writing_report, created_data, language, master_data
             ),
@@ -1911,14 +2155,28 @@ async def _create_preview_flow(
     )
 
 
+def _length_style_rule(budget: ContentBudget | None, *, number: int = 6) -> str:
+    """The per-line length caps as the writing loop's extra rewrite rule.
+
+    The loop only rewrites existing lines, so a rewrite must not grow past the line
+    limits the content budget planned the page around. ``number`` continues the
+    prompt's rule list (6, or 7 after the heavy or sample-style rule).
+    """
+    if budget is None or (budget.status == "unlimited" and not budget.text_format):
+        return ""
+    return f"{number}. Style: {render_style_caps(budget)}\n"
+
+
 async def _run_tailor_writing_loop(
     improved_data: dict[str, Any],
     language: str,
     prompt_id: str,
     progress: dict[str, str] | None = None,
+    style_rule: str = "",
 ) -> tuple[dict[str, Any], WritingReport | None]:
     """Critique the tailored resume; rewrite hard findings unless Light nudge.
 
+    ``style_rule`` adds one rule to the rewrite prompt (the budget's line caps).
     A failure keeps the tailored resume as it was (the report is then None).
     """
     try:
@@ -1927,6 +2185,7 @@ async def _run_tailor_writing_loop(
             language=language,
             rewrite=prompt_id != "nudge",
             heavy=prompt_id == "heavy",
+            style_rule=style_rule,
             progress=progress,
         )
         return loop.data, loop.report
@@ -2700,6 +2959,7 @@ async def download_resume_pdf(
     compactMode: bool = Query(False),
     showContactIcons: bool = Query(False),
     accentColor: str = Query("blue", pattern="^(blue|green|orange|red)$"),
+    descriptionFormat: str = Query("bullet", pattern="^(bullet|text)$"),
     lang: str | None = Query(None, pattern="^[a-z]{2}(-[A-Z]{2})?$"),
 ) -> Response:
     """Generate a PDF for a resume using headless Chromium.
@@ -2718,6 +2978,7 @@ async def download_resume_pdf(
     - bodyFont: serif, sans-serif, or mono
     - compactMode: enable tighter spacing
     - showContactIcons: show icons in contact info
+    - descriptionFormat: bullet (markers) or text ("- " / "-> " line prefixes)
     - lang: locale used for print page translations
     """
     resume = await db.get_resume(resume_id)
@@ -2746,6 +3007,7 @@ async def download_resume_pdf(
         compactMode=compactMode,
         showContactIcons=showContactIcons,
         accentColor=accentColor,
+        descriptionFormat=descriptionFormat,
         lang=lang,
     )
     url = resume_print_url(resume_id, fit)

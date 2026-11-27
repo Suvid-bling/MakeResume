@@ -377,6 +377,9 @@
       "actions": {
         "addPoint": "Agregar punto",
         "togglePointStyle": "Alternar viñeta",
+        "pointStyleBullet": "Fila de acción. Cambiar a fila de resultado",
+        "pointStyleResult": "Fila de resultado. Cambiar a línea simple",
+        "pointStylePlain": "Línea simple. Cambiar a fila de acción",
         "reorderPoint": "Arrastra para reordenar el punto"
       },
       "placeholders": {
@@ -517,6 +520,12 @@
         "sans": "Sans",
         "mono": "Mono"
       },
+      "descriptionFormat": "Formato de la descripción",
+      "descriptionFormats": {
+        "bullet": "Viñetas",
+        "text": "Líneas de texto"
+      },
+      "descriptionFormatHint": "Las viñetas dibujan un marcador. Las líneas de texto empiezan la acción con \"- \" y el resultado con \"-> \".",
       "options": "Opciones",
       "compactMode": "Modo compacto",
       "contactIcons": "Iconos de contacto",
@@ -909,6 +918,29 @@
       "unavailable": "Ajuste de página no disponible",
       "finalOver": "Podría superar el límite de páginas tras la reescritura",
       "notRechecked": "Ajuste al límite de páginas no verificado tras la reescritura"
+    },
+    "lengthFit": {
+      "title": "Ajuste de longitud",
+      "target": "Objetivo de p?ginas: {pages}",
+      "before": "Antes: {pages} p?gina(s), ?ltima p?gina al {fill}%",
+      "after": "Ahora: {pages} p?gina(s), ?ltima p?gina al {fill}%",
+      "status": {
+        "fit": "En el objetivo",
+        "over": "Por encima del objetivo de p?ginas",
+        "under": "Por debajo del objetivo de p?ginas"
+      },
+      "aiCalls": "Llamadas de IA extra para ajustar la p?gina: {count}",
+      "removedTitle": "Eliminado para ajustar la p?gina",
+      "restoredTitle": "Restaurado para llenar la p?gina",
+      "fields": {
+        "technicalSkills": "Habilidad",
+        "awards": "Premio",
+        "certificationsTraining": "Certificaci?n",
+        "workExperience": "Experiencia"
+      },
+      "reviewTitle": "Requiere revisi?n",
+      "reviewHint": "Estas filas van m?s all? de lo que dice tu curr?culum maestro sobre el puesto. Revisa cada una antes de guardar.",
+      "reviewRow": "{entry}, fila {line}"
     },
     "heavyWarning": "La reescritura profunda hace cambios más grandes, así que es más probable que afirme algo que no hiciste. Revisa cada línea antes de guardar.",
     "createWarning": "El modo Crear escribe un currículum simulado: el resumen, los puestos, las viñetas y las habilidades se generan a partir de la descripción del puesto, no de tu historial real. Úsalo para practicar, no como un currículum verídico.",

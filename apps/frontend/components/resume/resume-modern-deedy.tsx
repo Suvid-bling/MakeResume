@@ -6,6 +6,7 @@
  * recreation of that look; none of the original LaTeX source is used.
  */
 import React from 'react';
+import type { DescriptionStyle } from '@/lib/utils/description-styles';
 import { Mail, Phone, Globe, Linkedin, Github, MapPin, ExternalLink } from 'lucide-react';
 import type {
   ResumeData,
@@ -29,7 +30,7 @@ interface ResumeModernDeedyProps {
   additionalSectionLabels?: Partial<AdditionalSectionLabels>;
 }
 
-type PointStyles = ('bullet' | 'plain')[];
+type PointStyles = DescriptionStyle[];
 
 const stripScheme = (url: string) =>
   url

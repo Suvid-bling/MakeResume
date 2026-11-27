@@ -9,6 +9,7 @@ from app.mcp_server.tools._shared import (
     render_failed_message,
     require_resume,
     require_structured,
+    resolve_page_fit,
 )
 from app.pdf import PDFRenderError, render_resume_pdf
 from app.schemas.models import PageFitSettings
@@ -22,10 +23,14 @@ async def export_resume_pdf(
     output_path: str | None = None,
     print_settings: PageFitSettings | None = None,
 ) -> dict[str, Any]:
-    """Render a saved resume to PDF and report its page count. Needs the web frontend running. Overwrites an existing file at output_path."""
+    """Render a saved resume to PDF and report its page count. Needs the web frontend running. Overwrites an existing file at output_path.
+
+    Print settings default to the resume's saved formatting (its own template_settings, else
+    its parent's, else the defaults); fields you set in print_settings override them.
+    """
     resume = await require_resume(resume_id)
     require_structured(resume)
-    fit = print_settings or PageFitSettings()
+    fit, settings_source = await resolve_page_fit(resume, print_settings)
     path = (
         Path(output_path).expanduser()
         if output_path
@@ -48,4 +53,6 @@ async def export_resume_pdf(
         "bytes": len(pdf_bytes),
         "template": fit.template,
         "page_size": fit.pageSize,
+        "description_format": fit.descriptionFormat,
+        "print_settings_source": settings_source,
     }

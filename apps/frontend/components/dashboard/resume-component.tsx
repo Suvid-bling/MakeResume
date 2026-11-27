@@ -1,4 +1,5 @@
 import React from 'react';
+import type { DescriptionStyle } from '@/lib/utils/description-styles';
 import {
   ResumeSingleColumn,
   ResumeTwoColumn,
@@ -17,6 +18,7 @@ import {
   DEFAULT_TEMPLATE_SETTINGS,
   settingsToCssVars,
 } from '@/lib/types/template-settings';
+import { DescriptionFormatProvider } from '@/components/resume/description-format-context';
 import baseStyles from '@/components/resume/styles/_base.module.css';
 // The Serif, Sans and Mono faces (lib/types/template-settings.ts), one file per weight
 // the templates use. The preview renders in the reader's browser and the PDF in the
@@ -64,7 +66,7 @@ export interface Experience {
   location?: string;
   years?: string;
   description?: string[];
-  descriptionStyles?: ('bullet' | 'plain')[];
+  descriptionStyles?: DescriptionStyle[];
 }
 
 export interface Education {
@@ -83,7 +85,7 @@ export interface Project {
   github?: string;
   website?: string;
   description?: string[];
-  descriptionStyles?: ('bullet' | 'plain')[];
+  descriptionStyles?: DescriptionStyle[];
 }
 
 export interface AdditionalInfo {
@@ -139,7 +141,7 @@ export interface CustomSectionItem {
   location?: string;
   years?: string;
   description?: string[];
-  descriptionStyles?: ('bullet' | 'plain')[];
+  descriptionStyles?: DescriptionStyle[];
 }
 
 // Custom section data container
@@ -176,6 +178,12 @@ interface ResumeProps {
   locale?: string;
 }
 
+/** The resume without its additional.languages; the stored data is not changed. */
+function withoutLanguages(data: ResumeData): ResumeData {
+  if (!data.additional?.languages?.length) return data;
+  return { ...data, additional: { ...data.additional, languages: [] } };
+}
+
 /**
  * Resume Component
  *
@@ -189,7 +197,7 @@ interface ResumeProps {
  * - modern-two-column: Two-column layout with modern colorful accents
  */
 const Resume: React.FC<ResumeProps> = ({
-  resumeData,
+  resumeData: sourceResumeData,
   template = 'swiss-single',
   settings,
   additionalSectionLabels,
@@ -197,6 +205,9 @@ const Resume: React.FC<ResumeProps> = ({
   fallbackLabels,
   locale,
 }) => {
+  // Languages are never shown: the data stays, no template renders it.
+  const resumeData = withoutLanguages(sourceResumeData);
+
   // Merge provided settings with defaults
   const mergedSettings: TemplateSettings = {
     ...DEFAULT_TEMPLATE_SETTINGS,
@@ -215,95 +226,97 @@ const Resume: React.FC<ResumeProps> = ({
   const cssVars = settingsToCssVars(mergedSettings, locale);
 
   return (
-    <div
-      className={`${baseStyles['resume-body']} bg-white text-black w-full mx-auto resume-template-${mergedSettings.template}`}
-      style={cssVars}
-    >
-      {mergedSettings.template === 'swiss-single' && (
-        <ResumeSingleColumn
-          earlierExperienceLabel={sectionHeadings?.earlierExperience}
-          data={resumeData}
-          showContactIcons={mergedSettings.showContactIcons}
-          additionalSectionLabels={additionalSectionLabels}
-        />
-      )}
-      {mergedSettings.template === 'swiss-two-column' && (
-        <ResumeTwoColumn
-          earlierExperienceLabel={sectionHeadings?.earlierExperience}
-          data={resumeData}
-          showContactIcons={mergedSettings.showContactIcons}
-          sectionHeadings={sectionHeadings}
-        />
-      )}
-      {mergedSettings.template === 'modern' && (
-        <ResumeModern
-          earlierExperienceLabel={sectionHeadings?.earlierExperience}
-          data={resumeData}
-          showContactIcons={mergedSettings.showContactIcons}
-          additionalSectionLabels={additionalSectionLabels}
-        />
-      )}
-      {mergedSettings.template === 'modern-two-column' && (
-        <ResumeModernTwoColumn
-          earlierExperienceLabel={sectionHeadings?.earlierExperience}
-          data={resumeData}
-          showContactIcons={mergedSettings.showContactIcons}
-          sectionHeadings={sectionHeadings}
-          fallbackLabels={fallbackLabels}
-        />
-      )}
-      {mergedSettings.template === 'latex' && (
-        <ResumeLatex
-          earlierExperienceLabel={sectionHeadings?.earlierExperience}
-          data={resumeData}
-          showContactIcons={mergedSettings.showContactIcons}
-          additionalSectionLabels={additionalSectionLabels}
-        />
-      )}
-      {mergedSettings.template === 'clean' && (
-        <ResumeClean
-          earlierExperienceLabel={sectionHeadings?.earlierExperience}
-          data={resumeData}
-          showContactIcons={mergedSettings.showContactIcons}
-          additionalSectionLabels={additionalSectionLabels}
-        />
-      )}
-      {mergedSettings.template === 'vivid' && (
-        <ResumeVivid
-          earlierExperienceLabel={sectionHeadings?.earlierExperience}
-          data={resumeData}
-          showContactIcons={mergedSettings.showContactIcons}
-          sectionHeadings={sectionHeadings}
-          fallbackLabels={fallbackLabels}
-        />
-      )}
-      {mergedSettings.template === 'vivid-single' && (
-        <ResumeVividSingle
-          earlierExperienceLabel={sectionHeadings?.earlierExperience}
-          data={resumeData}
-          showContactIcons={mergedSettings.showContactIcons}
-          sectionHeadings={sectionHeadings}
-          fallbackLabels={fallbackLabels}
-        />
-      )}
-      {mergedSettings.template === 'modern-deedy' && (
-        <ResumeModernDeedy
-          earlierExperienceLabel={sectionHeadings?.earlierExperience}
-          data={resumeData}
-          showContactIcons={mergedSettings.showContactIcons}
-          additionalSectionLabels={additionalSectionLabels}
-        />
-      )}
-      {mergedSettings.template === 'deedy' && (
-        <ResumeDeedy
-          earlierExperienceLabel={sectionHeadings?.earlierExperience}
-          data={resumeData}
-          sectionHeadings={sectionHeadings}
-          additionalSectionLabels={additionalSectionLabels}
-          fallbackLabels={fallbackLabels}
-        />
-      )}
-    </div>
+    <DescriptionFormatProvider format={mergedSettings.descriptionFormat}>
+      <div
+        className={`${baseStyles['resume-body']} bg-white text-black w-full mx-auto resume-template-${mergedSettings.template}`}
+        style={cssVars}
+      >
+        {mergedSettings.template === 'swiss-single' && (
+          <ResumeSingleColumn
+            earlierExperienceLabel={sectionHeadings?.earlierExperience}
+            data={resumeData}
+            showContactIcons={mergedSettings.showContactIcons}
+            additionalSectionLabels={additionalSectionLabels}
+          />
+        )}
+        {mergedSettings.template === 'swiss-two-column' && (
+          <ResumeTwoColumn
+            earlierExperienceLabel={sectionHeadings?.earlierExperience}
+            data={resumeData}
+            showContactIcons={mergedSettings.showContactIcons}
+            sectionHeadings={sectionHeadings}
+          />
+        )}
+        {mergedSettings.template === 'modern' && (
+          <ResumeModern
+            earlierExperienceLabel={sectionHeadings?.earlierExperience}
+            data={resumeData}
+            showContactIcons={mergedSettings.showContactIcons}
+            additionalSectionLabels={additionalSectionLabels}
+          />
+        )}
+        {mergedSettings.template === 'modern-two-column' && (
+          <ResumeModernTwoColumn
+            earlierExperienceLabel={sectionHeadings?.earlierExperience}
+            data={resumeData}
+            showContactIcons={mergedSettings.showContactIcons}
+            sectionHeadings={sectionHeadings}
+            fallbackLabels={fallbackLabels}
+          />
+        )}
+        {mergedSettings.template === 'latex' && (
+          <ResumeLatex
+            earlierExperienceLabel={sectionHeadings?.earlierExperience}
+            data={resumeData}
+            showContactIcons={mergedSettings.showContactIcons}
+            additionalSectionLabels={additionalSectionLabels}
+          />
+        )}
+        {mergedSettings.template === 'clean' && (
+          <ResumeClean
+            earlierExperienceLabel={sectionHeadings?.earlierExperience}
+            data={resumeData}
+            showContactIcons={mergedSettings.showContactIcons}
+            additionalSectionLabels={additionalSectionLabels}
+          />
+        )}
+        {mergedSettings.template === 'vivid' && (
+          <ResumeVivid
+            earlierExperienceLabel={sectionHeadings?.earlierExperience}
+            data={resumeData}
+            showContactIcons={mergedSettings.showContactIcons}
+            sectionHeadings={sectionHeadings}
+            fallbackLabels={fallbackLabels}
+          />
+        )}
+        {mergedSettings.template === 'vivid-single' && (
+          <ResumeVividSingle
+            earlierExperienceLabel={sectionHeadings?.earlierExperience}
+            data={resumeData}
+            showContactIcons={mergedSettings.showContactIcons}
+            sectionHeadings={sectionHeadings}
+            fallbackLabels={fallbackLabels}
+          />
+        )}
+        {mergedSettings.template === 'modern-deedy' && (
+          <ResumeModernDeedy
+            earlierExperienceLabel={sectionHeadings?.earlierExperience}
+            data={resumeData}
+            showContactIcons={mergedSettings.showContactIcons}
+            additionalSectionLabels={additionalSectionLabels}
+          />
+        )}
+        {mergedSettings.template === 'deedy' && (
+          <ResumeDeedy
+            earlierExperienceLabel={sectionHeadings?.earlierExperience}
+            data={resumeData}
+            sectionHeadings={sectionHeadings}
+            additionalSectionLabels={additionalSectionLabels}
+            fallbackLabels={fallbackLabels}
+          />
+        )}
+      </div>
+    </DescriptionFormatProvider>
   );
 };
 

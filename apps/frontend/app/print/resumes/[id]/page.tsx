@@ -7,6 +7,7 @@ import {
   type HeaderFontFamily,
   type BodyFontFamily,
   type AccentColor,
+  type DescriptionFormat,
   DEFAULT_TEMPLATE_SETTINGS,
 } from '@/lib/types/template-settings';
 import { API_BASE } from '@/lib/api/client';
@@ -14,6 +15,7 @@ import { translate } from '@/lib/i18n/server';
 import { resolveLocale } from '@/lib/i18n/locale';
 import { withLocalizedDefaultSections } from '@/lib/utils/section-helpers';
 import { runningHeaderCss } from '@/lib/print/running-header';
+import { LayoutProbe } from '@/components/print/layout-probe';
 
 type PageProps = {
   params: Promise<{ id: string }>;
@@ -34,8 +36,10 @@ type PageProps = {
     compactMode?: string;
     showContactIcons?: string;
     accentColor?: string;
+    descriptionFormat?: string;
     lang?: string;
     draft?: string;
+    probe?: string;
   }>;
 };
 
@@ -67,6 +71,14 @@ function parseAccentColor(value: string | undefined): AccentColor {
     return value;
   }
   return DEFAULT_TEMPLATE_SETTINGS.accentColor;
+}
+
+/**
+ * Parse description format; a missing or unknown value is the default, 'bullet'
+ */
+function parseDescriptionFormat(value: string | undefined): DescriptionFormat {
+  if (value === 'text') return 'text';
+  return DEFAULT_TEMPLATE_SETTINGS.descriptionFormat;
 }
 
 /**
@@ -259,6 +271,7 @@ export default async function PrintResumePage({ params, searchParams }: PageProp
       DEFAULT_TEMPLATE_SETTINGS.showContactIcons
     ),
     accentColor: parseAccentColor(resolvedSearchParams?.accentColor),
+    descriptionFormat: parseDescriptionFormat(resolvedSearchParams?.descriptionFormat),
   };
 
   // Note: Margins are applied by Playwright's PDF renderer (not here)
@@ -271,24 +284,34 @@ export default async function PrintResumePage({ params, searchParams }: PageProp
   };
 
   return (
-    // `lang` also drives Chromium's own font fallback during PDF render, which
-    // matters for the CJK faces (L-08).
-    <div className="resume-print bg-white" lang={locale}>
-      {/* "Name · 2 / 3" on pages 2+; the CSS string is fully escaped. */}
-      <style
-        dangerouslySetInnerHTML={{
-          __html: runningHeaderCss(localizedResumeData.personalInfo?.name),
-        }}
-      />
-      <Resume
-        resumeData={localizedResumeData}
-        template={settings.template}
-        settings={printSettings}
-        locale={locale}
-        additionalSectionLabels={additionalSectionLabels}
-        sectionHeadings={sectionHeadings}
-        fallbackLabels={fallbackLabels}
-      />
-    </div>
+    <>
+      {/* `lang` also drives Chromium's own font fallback during PDF render, which
+          matters for the CJK faces (L-08). */}
+      <div className="resume-print bg-white" lang={locale}>
+        {/* "Name · 2 / 3" on pages 2+; the CSS string is fully escaped. */}
+        <style
+          dangerouslySetInnerHTML={{
+            __html: runningHeaderCss(localizedResumeData.personalInfo?.name),
+          }}
+        />
+        <Resume
+          resumeData={localizedResumeData}
+          template={settings.template}
+          settings={printSettings}
+          locale={locale}
+          additionalSectionLabels={additionalSectionLabels}
+          sectionHeadings={sectionHeadings}
+          fallbackLabels={fallbackLabels}
+        />
+      </div>
+      {/* ?probe=1: publish the measured layout as window.__resumeLayout for the backend. */}
+      {resolvedSearchParams?.probe === '1' && (
+        <LayoutProbe
+          pageSize={settings.pageSize}
+          margins={settings.margins}
+          descriptionFormat={settings.descriptionFormat}
+        />
+      )}
+    </>
   );
 }

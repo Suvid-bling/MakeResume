@@ -1,4 +1,5 @@
 import React from 'react';
+import type { DescriptionStyle } from '@/lib/utils/description-styles';
 import { Mail, Phone, MapPin, Globe, Linkedin, Github, ExternalLink } from 'lucide-react';
 import type {
   ResumeData,
@@ -105,7 +106,7 @@ export const renderContactDetail = (
 export const renderArrowBullets = (
   items?: string[],
   textClass: string = baseStyles['resume-text-xs'],
-  itemStyles?: ('bullet' | 'plain')[]
+  itemStyles?: DescriptionStyle[]
 ) => (
   <DescriptionList
     items={items}

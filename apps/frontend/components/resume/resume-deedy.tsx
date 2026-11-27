@@ -5,6 +5,7 @@
  * (https://github.com/deedy/Deedy-Resume), licensed under the Apache License 2.0.
  */
 import React from 'react';
+import { normalizeDescriptionStyle, type DescriptionStyle } from '@/lib/utils/description-styles';
 import type {
   ResumeData,
   SectionMeta,
@@ -16,8 +17,7 @@ import type {
 import { getSortedSections } from '@/lib/utils/section-helpers';
 import { formatDateRange } from '@/lib/utils';
 import { labeledSkillRows } from '@/lib/utils/skill-groups';
-import { DescriptionList } from './description-list';
-import { SafeHtml } from './safe-html';
+import { DescriptionList, DescriptionRowText } from './description-list';
 import { EarlierExperience, splitCondensed } from './earlier-experience';
 import { RESUME_SECTION, RESUME_SECTION_TITLE, resumeItem } from './page-break-attrs';
 import baseStyles from './styles/_base.module.css';
@@ -244,7 +244,7 @@ export const ResumeDeedy: React.FC<ResumeDeedyProps> = ({
     </h3>
   );
 
-  const bullets = (items?: string[], itemStyles?: ('bullet' | 'plain')[]) => (
+  const bullets = (items?: string[], itemStyles?: DescriptionStyle[]) => (
     <DescriptionList
       items={items}
       styles={itemStyles}
@@ -470,8 +470,12 @@ export const ResumeDeedy: React.FC<ResumeDeedyProps> = ({
       {item.description && item.description.length > 0 && (
         <div className={styles.lines}>
           {item.description.map((line, index) => (
-            <p key={index} className={styles.text}>
-              <SafeHtml html={line} />
+            <p
+              key={index}
+              data-desc-row={normalizeDescriptionStyle(item.descriptionStyles?.[index])}
+              className={styles.text}
+            >
+              <DescriptionRowText html={line} style={item.descriptionStyles?.[index]} />
             </p>
           ))}
         </div>

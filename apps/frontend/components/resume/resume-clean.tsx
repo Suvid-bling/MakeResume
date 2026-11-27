@@ -1,4 +1,5 @@
 import React from 'react';
+import type { DescriptionStyle } from '@/lib/utils/description-styles';
 import { Mail, Phone, MapPin, Globe, Linkedin, Github, ExternalLink } from 'lucide-react';
 import type {
   ResumeData,
@@ -130,7 +131,7 @@ export const ResumeClean: React.FC<ResumeCleanProps> = ({
     );
   };
 
-  const renderBullets = (items?: string[], pointStyles?: ('bullet' | 'plain')[]) => (
+  const renderBullets = (items?: string[], pointStyles?: DescriptionStyle[]) => (
     <DescriptionList items={items} styles={pointStyles} />
   );
 
@@ -397,7 +398,7 @@ const AdditionalSection: React.FC<{
 const DynamicResumeSectionClean: React.FC<{
   sectionMeta: SectionMeta;
   resumeData: ResumeData;
-  renderBullets: (items?: string[], pointStyles?: ('bullet' | 'plain')[]) => React.ReactNode;
+  renderBullets: (items?: string[], pointStyles?: DescriptionStyle[]) => React.ReactNode;
   renderEntryHeader: (
     primary?: string,
     role?: string,

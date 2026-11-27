@@ -12,13 +12,21 @@ from app.mcp_server.tools._shared import (
     require_job,
     require_resume,
     require_valid_structured,
+    resolve_page_fit,
 )
 from app.pdf import PDFRenderError
 from app.routers.resumes import _grounding_master_data, _scorable_job_keywords
 from app.schemas.models import PageFitSettings
 from app.services import ats_parse
 from app.services.ats_parse.models import ParseCheckReport
-from app.services.page_fit import count_pdf_pages, page_limit
+from app.services.page_fit import (
+    PdfLayout,
+    classify_fill,
+    count_pdf_pages,
+    measure_pdf_layout,
+    merge_layout,
+    page_limit,
+)
 from app.services.writing_quality import writing_report
 
 logger = logging.getLogger(__name__)
@@ -34,6 +42,7 @@ def _issues(
     score: dict[str, Any] | None,
     no_job_keywords: bool,
     weak_writing: bool = False,
+    page_fill_status: str | None = None,
 ) -> list[str]:
     issues: list[str] = []
     if report is None:
@@ -41,6 +50,8 @@ def _issues(
     else:
         if max_pages is not None and page_count is not None and page_count > max_pages:
             issues.append("over_page_limit")
+        if page_fill_status == "under":
+            issues.append("under_page_fill")
         status = {check.id: check.status for check in report.checks}
         if status.get("text_layer") == "fail":
             issues.append("text_layer")
@@ -65,13 +76,24 @@ def _issues(
     return issues
 
 
+def _pdf_layout(pdf_bytes: bytes, fit: PageFitSettings) -> PdfLayout | None:
+    try:
+        return measure_pdf_layout(pdf_bytes, fit)
+    except Exception as e:  # noqa: BLE001 - the fill is advice, never block the report
+        logger.warning("Could not measure the page fill: %s", e)
+        return None
+
+
 async def verify(
     resume: dict[str, Any],
     job_id: str | None,
-    fit: PageFitSettings,
+    print_settings: PageFitSettings | None,
     max_pages: int | None,
 ) -> dict[str, Any]:
     resume_id = resume["resume_id"]
+    # Own saved formatting, else the parent's, else the defaults; fields the caller set
+    # in print_settings win.
+    fit, settings_source = await resolve_page_fit(resume, print_settings)
     max_pages = page_limit(fit, max_pages)
     data = require_valid_structured(resume)
     if job_id is None:
@@ -91,8 +113,13 @@ async def verify(
         "resume_id": resume_id,
         "job_id": job_id,
         "template": fit.template,
+        "description_format": fit.descriptionFormat,
+        "print_settings_source": settings_source,
         "page_count": None,
         "max_pages": max_pages,
+        "last_page_fill": None,
+        "page_fill_status": None,
+        "layout": None,
         "score": score,
         "writing": writing_report(data, get_content_language()).model_dump(
             include={"score", "findings"}
@@ -100,13 +127,24 @@ async def verify(
         "parse_check": None,
     }
     report = None
+    page_fill_status: str | None = None
     try:
-        pdf_bytes = await render_pdf(resume_id, fit)
+        pdf_bytes, probe = await render_pdf(resume_id, fit)
     except PDFRenderError as e:
         logger.error("Verify render failed for %s: %s", resume_id, e)
         result["render_error"] = render_failed_message()
     else:
         result["page_count"] = count_pdf_pages(pdf_bytes)
+        pdf_layout = _pdf_layout(pdf_bytes, fit)
+        if pdf_layout is not None:
+            layout = merge_layout(pdf_layout, probe, data)
+            result["last_page_fill"] = round(pdf_layout.last_page_fill, 3)
+            result["layout"] = {**layout.to_dict(), "probe_ok": layout.probe_ok}
+            if max_pages is not None:
+                page_fill_status = classify_fill(
+                    result["page_count"], pdf_layout.last_page_fill, max_pages
+                )
+                result["page_fill_status"] = page_fill_status
         report = await ats_parse.parse_check_pdf(pdf_bytes, data, fit)
         result["parse_check"] = report.model_dump()
     result["issues"] = _issues(
@@ -118,6 +156,7 @@ async def verify(
         weak_writing=any(
             f["severity"] == "hard" for f in result["writing"]["findings"]
         ),
+        page_fill_status=page_fill_status,
     )
     return result
 
@@ -130,9 +169,16 @@ async def verify_resume(
 ) -> dict[str, Any]:
     """Render a saved resume once and report page count, ATS parse-check, keyword score and issues. Writes nothing.
 
-    job_id defaults to the job a tailored resume was saved for. With print_settings.cv_mode
-    true (an academic CV) there is no page cap: max_pages is ignored and over_page_limit is
-    never raised; page_count is still reported. Issue codes: over_page_limit,
+    job_id defaults to the job a tailored resume was saved for. Print settings default to
+    the resume's saved formatting (its own template_settings, else its parent's, else the
+    defaults); fields you set in print_settings override them, and print_settings_source says
+    where the rest came from. max_pages is the page target. With print_settings.cv_mode
+    true (an academic CV) there is no page cap: max_pages is ignored and over_page_limit and
+    under_page_fill are never raised; page_count is still reported. last_page_fill (0 to 1)
+    is how full the last page is, page_fill_status is fit, over or under against max_pages
+    (a last page 90% to 100% full is fit), and layout has the measured line counts and
+    line capacity of each description row. Issue codes: over_page_limit,
+    under_page_fill (fewer pages than max_pages, or a last page under 90% full),
     text_layer (the PDF has too little extractable text), multi_column, garbled_glyphs,
     low_order_fidelity, fields_missing, roundtrip_truncated, injectable_keywords,
     no_job_keywords (the job has no keywords, so there is no score: call set_job_keywords),
@@ -141,4 +187,4 @@ async def verify_resume(
     as the app's Writing score.
     """
     resume = await require_resume(resume_id)
-    return await verify(resume, job_id, print_settings or PageFitSettings(), max_pages)
+    return await verify(resume, job_id, print_settings, max_pages)

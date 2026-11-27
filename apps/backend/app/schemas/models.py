@@ -23,7 +23,13 @@ _TEXT_VALUE_KEYS = (
     "name",
     "label",
 )
-_BULLET_PREFIX_RE = re.compile(r"^\s*(?:[-*•]+|\d+[.)])\s*")
+# Row prefixes stripped from description lines. The arrow forms ("->", "→", "➜")
+# come first so "-> x" is not read as a "-" bullet followed by "> x".
+_BULLET_PREFIX_RE = re.compile(r"^\s*(?:->|→|➜|[-*•]+|\d+[.)])\s*")
+# A row that starts with an arrow is a result row (see ``DescriptionStyle``).
+_RESULT_PREFIX_RE = re.compile(r"^\s*(?:->|→|➜)")
+# bullet = action row, result = outcome row, plain = no marker.
+DescriptionStyle = Literal["bullet", "result", "plain"]
 # A Technical Skills line that starts a new row on the resume (see the
 # frontend's lib/utils/skill-groups.ts). Kept through validation, never shown.
 SKILL_ROW_BREAK = "---"
@@ -211,18 +217,86 @@ def _coerce_string_list(
     return [coerced] if coerced else []
 
 
-def _coerce_description_styles(value: Any) -> list[Literal["bullet", "plain"]]:
+def _coerce_description_styles(value: Any) -> list[DescriptionStyle]:
     """Coerce description style values into supported row styles."""
     if not isinstance(value, list):
         return []
 
-    return ["plain" if entry == "plain" else "bullet" for entry in value]
+    return [_coerce_description_style(entry) for entry in value]
+
+
+def _coerce_description_style(entry: Any) -> DescriptionStyle:
+    """Map one raw style value to a supported row style (unknown -> bullet)."""
+    if entry == "plain":
+        return "plain"
+    if entry == "result":
+        return "result"
+    return "bullet"
+
+
+def _extract_result_rows(data: Any) -> Any:
+    """Turn description rows written with an arrow prefix into result rows.
+
+    A row such as "-> Cut latency 40%" (also "→" and "➜") becomes the text
+    "Cut latency 40%" with style "result". An explicit "plain" style wins over
+    the prefix. ``descriptionStyles`` may be shorter than ``description`` and
+    missing entries default to "bullet". Input without an arrow row is returned
+    unchanged so existing style handling stays as it was.
+    """
+    if not isinstance(data, dict):
+        return data
+
+    description = data.get("description")
+    entries = [description] if isinstance(description, str) else description
+    if not isinstance(entries, list):
+        return data
+
+    def has_arrow_row(entry: Any) -> bool:
+        return isinstance(entry, str) and any(
+            _RESULT_PREFIX_RE.match(line) for line in re.split(r"\r?\n+", entry)
+        )
+
+    if not any(has_arrow_row(entry) for entry in entries):
+        return data
+
+    raw_styles = data.get("descriptionStyles")
+    provided = (
+        _coerce_description_styles(raw_styles)
+        if isinstance(raw_styles, list) and isinstance(description, list)
+        else []
+    )
+
+    rows: list[str] = []
+    styles: list[DescriptionStyle] = []
+
+    for index, entry in enumerate(entries):
+        base: DescriptionStyle = provided[index] if index < len(provided) else "bullet"
+
+        if not isinstance(entry, str):
+            text = _coerce_text(entry)
+            if text:
+                rows.append(text)
+                styles.append(base)
+            continue
+
+        for line_index, raw_line in enumerate(re.split(r"\r?\n+", entry)):
+            raw = raw_line.strip()
+            text = _BULLET_PREFIX_RE.sub("", raw)
+            if not text:
+                continue
+            # Only the first line of an entry carries the entry's own style.
+            line_base: DescriptionStyle = base if line_index == 0 else "bullet"
+            is_result = bool(_RESULT_PREFIX_RE.match(raw))
+            rows.append(text)
+            styles.append("result" if is_result and line_base != "plain" else line_base)
+
+    return {**data, "description": rows, "descriptionStyles": styles}
 
 
 def _align_description_styles(
     description: list[str],
-    description_styles: list[Literal["bullet", "plain"]],
-) -> list[Literal["bullet", "plain"]]:
+    description_styles: list[DescriptionStyle],
+) -> list[DescriptionStyle]:
     """Keep descriptionStyles aligned with description rows."""
     return [
         description_styles[index] if index < len(description_styles) else "bullet"
@@ -263,7 +337,7 @@ class Experience(BaseModel):
     location: str | None = None
     years: str = ""
     description: list[str] = Field(default_factory=list)
-    descriptionStyles: list[Literal["bullet", "plain"]] = Field(default_factory=list)
+    descriptionStyles: list[DescriptionStyle] = Field(default_factory=list)
     # Renders as one "Title, Company, years" line under "Earlier experience"; the
     # description and location stay stored but are not shown.
     condensed: bool = False
@@ -275,9 +349,7 @@ class Experience(BaseModel):
 
     @field_validator("descriptionStyles", mode="before")
     @classmethod
-    def _normalize_description_styles(
-        cls, value: Any
-    ) -> list[Literal["bullet", "plain"]]:
+    def _normalize_description_styles(cls, value: Any) -> list[DescriptionStyle]:
         return _coerce_description_styles(value)
 
     @field_validator("condensed", mode="before")
@@ -286,6 +358,11 @@ class Experience(BaseModel):
         if isinstance(value, bool):
             return value
         return str(value).strip().lower() == "true"
+
+    @model_validator(mode="before")
+    @classmethod
+    def _split_result_rows(cls, data: Any) -> Any:
+        return _extract_result_rows(data)
 
     @model_validator(mode="after")
     def _sync_description_styles(self) -> "Experience":
@@ -320,7 +397,7 @@ class Project(BaseModel):
     github: str | None = None
     website: str | None = None
     description: list[str] = Field(default_factory=list)
-    descriptionStyles: list[Literal["bullet", "plain"]] = Field(default_factory=list)
+    descriptionStyles: list[DescriptionStyle] = Field(default_factory=list)
 
     @field_validator("description", mode="before")
     @classmethod
@@ -329,10 +406,13 @@ class Project(BaseModel):
 
     @field_validator("descriptionStyles", mode="before")
     @classmethod
-    def _normalize_description_styles(
-        cls, value: Any
-    ) -> list[Literal["bullet", "plain"]]:
+    def _normalize_description_styles(cls, value: Any) -> list[DescriptionStyle]:
         return _coerce_description_styles(value)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _split_result_rows(cls, data: Any) -> Any:
+        return _extract_result_rows(data)
 
     @model_validator(mode="after")
     def _sync_description_styles(self) -> "Project":
@@ -391,7 +471,7 @@ class CustomSectionItem(BaseModel):
     location: str | None = None
     years: str = ""
     description: list[str] = Field(default_factory=list)
-    descriptionStyles: list[Literal["bullet", "plain"]] = Field(default_factory=list)
+    descriptionStyles: list[DescriptionStyle] = Field(default_factory=list)
 
     @field_validator("description", mode="before")
     @classmethod
@@ -400,10 +480,13 @@ class CustomSectionItem(BaseModel):
 
     @field_validator("descriptionStyles", mode="before")
     @classmethod
-    def _normalize_description_styles(
-        cls, value: Any
-    ) -> list[Literal["bullet", "plain"]]:
+    def _normalize_description_styles(cls, value: Any) -> list[DescriptionStyle]:
         return _coerce_description_styles(value)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _split_result_rows(cls, data: Any) -> Any:
+        return _extract_result_rows(data)
 
     @model_validator(mode="after")
     def _sync_description_styles(self) -> "CustomSectionItem":
@@ -726,6 +809,10 @@ class TemplateSettings(BaseModel):
     compactMode: bool = False
     showContactIcons: bool = False
     accentColor: Literal["blue", "green", "orange", "red"] = "blue"
+    # How description rows are written: "bullet" draws a marker, "text" starts action
+    # rows with "- " and result rows with "-> " as plain text. Saved settings without
+    # the field fall back to "bullet".
+    descriptionFormat: Literal["bullet", "text"] = "bullet"
     # Orders saves from one builder session (a tab): `revision` counts up per session.
     # A save older than the stored one from the same session is ignored, so that
     # tab's requests arriving out of order cannot undo its newer choice. Saves from
@@ -760,6 +847,7 @@ class PageFitSettings(BaseModel):
     compactMode: bool = False
     showContactIcons: bool = False
     accentColor: Literal["blue", "green", "orange", "red"] = "blue"
+    descriptionFormat: Literal["bullet", "text"] = "bullet"
     lang: str | None = Field(None, pattern=r"^[a-z]{2}(-[A-Z]{2})?$")
     # Academic CV mode: no page cap. Page fit and verification report the page count
     # but never trim to a limit or raise an over-limit warning. Not a print setting,
@@ -785,6 +873,9 @@ class ImproveResumeRequest(BaseModel):
     page_fit: PageFitSettings | None = None
     # Page budget for page_fit; ignored without page_fit.
     max_pages: int = Field(1, ge=1, le=5)
+    # How description rows render in the resume being tailored. "text" turns on the
+    # "- " / "-> " row structure in the content budget, with or without page_fit.
+    description_format: Literal["bullet", "text"] = "bullet"
     # Client-chosen id for GET /resumes/improve/progress/{id} (live stages).
     progress_id: str | None = Field(None, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
     # Required when prompt_id == "create": which style sample to write toward.
@@ -809,6 +900,33 @@ class BulletSelectionSummary(BaseModel):
     # it could not be rendered (final_pages is then the pre-rewrite measurement),
     # None = no final check applies (page fit skipped, over or unavailable).
     final_check: Literal["ok", "skipped"] | None = None
+
+
+class LengthFitSummary(BaseModel):
+    """What the length safety net measured and changed after the first rewrite."""
+
+    # None = no page target (unlimited): nothing was measured or changed.
+    target_pages: int | None = None
+    # fit: target pages with the last page 90% to 100% full. over / under: the best
+    # version found still misses it. unavailable: it could not be rendered.
+    status: Literal["fit", "over", "under", "unavailable", "skipped"] = "skipped"
+    pages_before: int | None = None
+    last_page_fill_before: float | None = None
+    pages_after: int | None = None
+    last_page_fill_after: float | None = None
+    renders: int = 0
+    # Extra LLM calls the safety net made (at most one per round, three rounds).
+    rounds: int = 0
+    ai_calls: int = 0
+    # Items removed to fit or put back to fill: {"field": ..., "text": ...}, where
+    # field is technicalSkills, awards, certificationsTraining or workExperience.
+    dropped: list[dict[str, str]] = Field(default_factory=list)
+    restored: list[dict[str, str]] = Field(default_factory=list)
+    # Rewritten rows with weak grounding in the master entry ("needs review").
+    review_paths: list[str] = Field(default_factory=list)
+    stopped: Literal[
+        "fit", "max_rounds", "timeout", "unmeasurable", "no_progress", "unlimited"
+    ] = "fit"
 
 
 class ImprovementSuggestion(BaseModel):
@@ -943,6 +1061,10 @@ class ImproveResumeData(BaseModel):
 
     # Harness bullet selection summary (None unless max_bullets_per_entry or page_fit was requested)
     bullet_selection: BulletSelectionSummary | None = None
+
+    # Length fit: content budget outcome and safety-net summary (None without a page
+    # target or when the layout could not be measured at all)
+    length_fit: LengthFitSummary | None = None
 
     # Writing critique: score from the code rules, critic notes, rewrite counts
     writing: WritingReport | None = None
@@ -1244,7 +1366,7 @@ class ResumeChange(BaseModel):
     path: str = Field(
         description="Dot+bracket path, e.g. 'workExperience[0].description[1]'"
     )
-    action: Literal["replace", "append", "reorder", "add_skill"]
+    action: Literal["replace", "append", "reorder", "add_skill", "rewrite_rows"]
     original: str | list[str] | None = Field(
         default=None,
         description="Current text at path — for verification. May be a list (the "

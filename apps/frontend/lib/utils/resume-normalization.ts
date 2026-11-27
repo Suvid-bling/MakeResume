@@ -6,6 +6,7 @@ import type {
   ResumeData,
   SectionType,
 } from '@/components/dashboard/resume-component';
+import { normalizeDescriptionStyle } from '@/lib/utils/description-styles';
 
 type DescribedItem = {
   description?: unknown;
@@ -72,7 +73,7 @@ const normalizeDescriptionFields = <T extends DescribedItem>(item: T): T => {
 
     nextDescriptions.push(description.trim());
     if (styles) {
-      nextStyles.push(styles[index] === 'plain' ? 'plain' : 'bullet');
+      nextStyles.push(normalizeDescriptionStyle(styles[index]));
     }
   });
 

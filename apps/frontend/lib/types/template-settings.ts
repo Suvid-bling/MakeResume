@@ -37,6 +37,16 @@ export type SpacingLevel = 1 | 2 | 3 | 4 | 5;
 
 export type HeaderFontFamily = 'serif' | 'sans-serif' | 'mono';
 export type BodyFontFamily = 'serif' | 'sans-serif' | 'mono';
+/**
+ * How description rows are written. 'bullet' draws a marker; 'text' starts an action
+ * row with the text "- " and a result row with "-> " (real text, no marker, no
+ * hanging indent).
+ */
+export type DescriptionFormat = 'bullet' | 'text';
+/** Saved settings from before this option existed have no value: they stay 'bullet'. */
+export function normalizeDescriptionFormat(value: unknown): DescriptionFormat {
+  return value === 'text' ? 'text' : 'bullet';
+}
 
 export interface MarginSettings {
   top: number; // 5-25mm
@@ -67,6 +77,7 @@ export interface TemplateSettings {
   compactMode: boolean; // Apply tighter spacing across the board
   showContactIcons: boolean; // Show icons next to contact info
   accentColor: AccentColor; // Accent color for Modern template
+  descriptionFormat: DescriptionFormat; // Bullet markers or "- " / "-> " text prefixes
   // On saved settings: which builder session saved them, and its save number.
   session?: string | null;
   revision?: number;
@@ -84,6 +95,7 @@ export const DEFAULT_TEMPLATE_SETTINGS: TemplateSettings = {
   compactMode: false,
   showContactIcons: false,
   accentColor: 'blue',
+  descriptionFormat: 'bullet',
 };
 
 /**

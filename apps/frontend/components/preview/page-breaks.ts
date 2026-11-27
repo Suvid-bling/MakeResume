@@ -71,7 +71,7 @@ export function computePageStarts(
   return starts;
 }
 
-function lineHeightOf(element: Element): number {
+export function lineHeightOf(element: Element): number {
   const style = getComputedStyle(element);
   const lineHeight = Number.parseFloat(style.lineHeight);
   if (Number.isFinite(lineHeight) && lineHeight > 0) return lineHeight;

@@ -174,7 +174,7 @@ Custom section types:
 Rules:
 - Use "" for missing text fields, [] for missing arrays, null for optional fields
 - Number IDs starting from 1
-- For workExperience, personalProjects, and custom itemList items, include descriptionStyles with one value for each description row. Use "bullet" for normal bullet rows and "plain" for rows that should render without a bullet marker (for example subheadings or standalone labels).
+- For workExperience, personalProjects, and custom itemList items, include descriptionStyles with one value for each description row. Use "bullet" for normal action rows, "result" for rows that state an outcome (a source row that starts with "->", "→" or "➜" is a result row: strip that prefix from the text), and "plain" for rows that should render without a marker (for example subheadings or standalone labels).
 - Format dates preserving the original precision. Keep months when present: "Jan 2020 - Dec 2023", "May 2021 - Present". Use "YYYY - YYYY" only when the source has no months.
 - Use snake_case for custom section keys (e.g., "volunteer_work", "publications")
 - Preserve the original section name as a descriptive key
@@ -256,7 +256,7 @@ Rules:
 - Do NOT introduce new tools, technologies, or certifications not already present
 - Do NOT add new bullet points or sections
 - Preserve original bullet count and ordering within each section
-- Preserve descriptionStyles arrays and keep them aligned one-to-one with description arrays
+- Preserve descriptionStyles arrays and keep them aligned one-to-one with description arrays ("bullet" action rows and "result" outcome rows may swap; "plain" rows stay plain)
 - Keep proper nouns (names, company names, locations) unchanged
 - For customSections: preserve exact structure, item count, titles, subtitles, and years. If an item's description is an empty array [] in the original, keep it empty []. Do NOT generate descriptions for items that had none.
 - Copy the "years" field values EXACTLY as they appear in the original resume (including any month prefixes like "Jan 2020 - Present"). Do not shorten, reformat, or drop months.
@@ -287,7 +287,7 @@ Rules:
 - You may rephrase bullet points to include keyword phrasing
 - Do NOT introduce new skills, tools, or certifications not in the resume
 - Do NOT change role, industry, or seniority level
-- Preserve descriptionStyles arrays and keep them aligned one-to-one with description arrays
+- Preserve descriptionStyles arrays and keep them aligned one-to-one with description arrays ("bullet" action rows and "result" outcome rows may swap; "plain" rows stay plain)
 - For customSections: preserve exact structure, item count, titles, subtitles, and years. If an item's description is an empty array [] in the original, keep it empty []. Do NOT generate descriptions for items that had none.
 - Copy the "years" field values EXACTLY as they appear in the original resume (including any month prefixes like "Jan 2020 - Present"). Do not shorten, reformat, or drop months.
 - If resume is non-technical, keep language non-technical while still aligning keywords
@@ -318,7 +318,7 @@ Rules:
 - Preserve existing action verbs. Do not invent quantifiable achievements not in the original.
 - Keep proper nouns (names, company names, locations) unchanged
 - Translate job titles, descriptions, and skills to {output_language}
-- Preserve descriptionStyles arrays and keep them aligned one-to-one with description arrays
+- Preserve descriptionStyles arrays and keep them aligned one-to-one with description arrays ("bullet" action rows and "result" outcome rows may swap; "plain" rows stay plain)
 - For customSections: preserve exact structure, item count, titles, subtitles, and years. If an item's description is an empty array [] in the original, keep it empty []. Do NOT generate descriptions for items that had none.
 - Improve custom section content the same way as standard sections
 - Copy the "years" field values EXACTLY as they appear in the original resume (including any month prefixes like "Jan 2020 - Present"). Do not shorten, reformat, or drop months.
@@ -351,7 +351,7 @@ Rules:
 - Keep the same number of bullets in every entry. Do not merge, drop or add bullets.
 - Never invent metrics. When a bullet has no number, state the outcome or scope it already implies.
 - Keep proper nouns (names, company names, locations) unchanged
-- Preserve descriptionStyles arrays and keep them aligned one-to-one with description arrays
+- Preserve descriptionStyles arrays and keep them aligned one-to-one with description arrays ("bullet" action rows and "result" outcome rows may swap; "plain" rows stay plain)
 - For customSections: preserve exact structure, item count, titles, subtitles, and years. If an item's description is an empty array [] in the original, keep it empty []. Do NOT generate descriptions for items that had none.
 - Copy the "years" field values EXACTLY as they appear in the original resume (including any month prefixes like "Jan 2020 - Present"). Do not shorten, reformat, or drop months.
 - Do NOT use em dash ("—") anywhere in the writing/output, even if it exists, remove it
@@ -573,6 +573,15 @@ DIFF_FIXED_ROWS_INSTRUCTION = (
     '"append" on their description paths; only rewrite the existing bullets.'
 )
 
+# Strategy id of the length safety net's extra call: it only rewrites the work entries
+# the content budget lists (action "rewrite_rows") and changes nothing else.
+LENGTH_STRATEGY_ID = "length"
+DIFF_LENGTH_INSTRUCTION = (
+    "Length fit: this resume misses its page target. Change ONLY the work entries the "
+    'CONTENT BUDGET lists, each with ONE action "rewrite_rows" change. Do not use any '
+    "other action and do not touch the summary, skills or any other entry."
+)
+
 SKILL_TARGET_PLAN_PROMPT = """Build a concise skill target plan for tailoring this resume to the job.
 
 Return ONLY a JSON object. Do not rewrite the resume.
@@ -650,16 +659,16 @@ RULES:
 10. Exception to rule 2: you may add a skill only if it appears in the verified skill targets below
 11. By DEFAULT, scan the summary and every work, project, and education description for content that already demonstrates a job-description keyword or skill, and reframe that text using the job description's terminology where it is not already phrased that way (per rule 9, leave content that already aligns well), while preserving the candidate's actual accomplishment. Do NOT add new work, metrics, or responsibilities; only restate existing content in the JD's language, and verify every reframe stays factually accurate.
 12. Preserve original capitalization, especially for proper nouns, technical terms (e.g., REST, API, AWS), and acronyms. Do not change the casing of words that were capitalized in the original.
+13. If a CONTENT BUDGET section appears below, it overrides rules 5 and 9 and the strategy's limits on adding bullets, for the entries it marks EXPAND, CONDENSE or RESTRUCTURE only. Entries marked KEEP follow the rules above.
 
 PATHS you can target:
 - "summary" — the resume summary text
 - "workExperience[i].description[j]" — a specific bullet (i = entry index, j = bullet index)
-- "workExperience[i].description" — append a new bullet (action: "append"), or reorder that entry's bullets (action: "reorder", value = the entry's original bullets copied exactly in the new order; only when the strategy allows reordering)
+- "workExperience[i].description" — append a new bullet (action: "append"), or reorder that entry's bullets (action: "reorder", value = the entry's original bullets copied exactly in the new order; only when the strategy allows reordering), or, only for an entry the CONTENT BUDGET lists, replace all of its rows at once (action: "rewrite_rows", original: null, value = the complete list of rows, a result row starting with "-> ")
 - "personalProjects[i].description[j]" — a specific project bullet
 - "personalProjects[i].description" — append a new project bullet (action: "append")
 - "education[i].description" — the education entry's description text (replace only; it is a single string, not a list)
 - "additional.technicalSkills" — reorder the skills list (action: "reorder") or add one verified skill (action: "add_skill")
-- "additional.languages" — reorder the languages list (action: "reorder")
 - "additional.certificationsTraining" — reorder the certifications list (action: "reorder")
 - "additional.awards" — reorder the awards list (action: "reorder")
 
@@ -670,7 +679,7 @@ Keywords to emphasize (only if already supported by resume content):
 
 Verified skill targets:
 {skill_targets}
-
+{length_budget}
 Job Description:
 {job_description}
 
@@ -707,6 +716,13 @@ Output this exact JSON format, nothing else:
       "original": null,
       "value": "verified skill target missing from the skills list",
       "reason": "added verified JD skill for review"
+    }},
+    {{
+      "path": "workExperience[0].description",
+      "action": "rewrite_rows",
+      "original": null,
+      "value": ["action row", "-> result row"],
+      "reason": "only for an entry the CONTENT BUDGET lists: its complete new rows"
     }}
   ],
   "strategy_notes": "brief summary of the tailoring approach"
@@ -738,11 +754,11 @@ Job keywords:
 
 The candidate's work history to write for (keep every entry, in this order; only the title and bullets change):
 {work_skeleton}
-
+{length_budget}
 Rules:
 1. Write a "title" (headline matching the job's role) and a "summary" (2 to 4 sentences) that position the candidate for this job.
-2. For each entry in the work history above, write a new "title" (a plausible, progressively senior job title leading up to one closest to the job description for the most recent entry) and new "description" bullets written for this job description.
-3. {max_bullets_rule}
+2. For each entry in the work history above, write a new "title" (a plausible, progressively senior job title leading up to one closest to the job description for the most recent entry) and new "description" rows written for this job description.
+3. Follow the CONTENT BUDGET: each entry gets the number of rows it lists (plus or minus one, action rows and result rows together) and no row is longer than its line limit. The budget overrides the reference sample's bullet counts; the sample only sets tone and style. Expand under every existing entry's company; never add a company.
 4. Each bullet may state a plausible, reasonable quantified result; do not use the reference sample's own numbers.
 5. Write a "technicalSkills" list built entirely from the job description's required and preferred skills and keywords.
 6. Never reuse the reference sample's names, companies, schools or numbers. Use only the job description and the work history skeleton above as facts.
@@ -753,7 +769,7 @@ Output ONLY this JSON object, with one workExperience item per index listed abov
   "title": "headline for personalInfo.title",
   "summary": "2 to 4 sentence summary",
   "workExperience": [
-    {{"index": 0, "title": "job title for this entry", "description": ["bullet one", "bullet two"]}}
+    {{"index": 0, "title": "job title for this entry", "description": ["action row", "-> result row, only where the budget asks for result rows"]}}
   ],
   "technicalSkills": ["skill one", "skill two"]
 }}"""
@@ -787,7 +803,7 @@ Output ONLY this JSON object, with one workExperience item per index listed abov
   "title": "headline for personalInfo.title",
   "summary": "2 to 4 sentence summary",
   "workExperience": [
-    {{"index": 0, "title": "job title for this entry", "description": ["bullet one", "bullet two"]}}
+    {{"index": 0, "title": "job title for this entry", "description": ["action row", "-> result row, only where the draft or the budget has result rows"]}}
   ],
   "technicalSkills": ["skill one", "skill two"]
 }}"""

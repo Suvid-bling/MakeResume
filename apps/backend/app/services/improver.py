@@ -19,9 +19,11 @@ from app.prompts import (
     DEFAULT_IMPROVE_PROMPT_ID,
     DIFF_FIXED_ROWS_INSTRUCTION,
     DIFF_IMPROVE_PROMPT,
+    DIFF_LENGTH_INSTRUCTION,
     DIFF_STRATEGY_INSTRUCTIONS,
     EXTRACT_KEYWORDS_PROMPT,
     IMPROVE_RESUME_PROMPTS,
+    LENGTH_STRATEGY_ID,
     SKILL_TARGET_PLAN_PROMPT,
     get_language_name,
 )
@@ -350,6 +352,17 @@ def _bullet_order(source_rows: list[Any], proposed: list[Any]) -> list[int] | No
     return order
 
 
+_ENTRY_ROW_PATH_RE = re.compile(
+    r"^((?:workExperience|personalProjects)\[\d+\]\.description)(?:\[\d+\])?$"
+)
+
+
+def _entry_description_path(path: str) -> str | None:
+    """``workExperience[i].description`` for a path at or below it, else None."""
+    match = _ENTRY_ROW_PATH_RE.match(path)
+    return match.group(1) if match else None
+
+
 def _apply_bullet_order(result: dict[str, Any], path: str, order: list[int]) -> bool:
     entry_path = path.rsplit(".", 1)[0]
     entry, resolved = _resolve_path(result, entry_path)
@@ -372,6 +385,7 @@ def apply_diffs(
     *,
     fixed_row_sections: tuple[str, ...] = (),
     allow_bullet_reorder: bool = False,
+    rewrite_paths: frozenset[str] | set[str] = frozenset(),
 ) -> tuple[dict[str, Any], list[ResumeChange], list[ResumeChange]]:
     """Apply verified diffs to original resume.
 
@@ -393,6 +407,11 @@ def apply_diffs(
             bullets is allowed (heavy rewrite). It names the original bullets in
             their new order and is applied after every other change, so replaces
             keep addressing the original indices.
+        rewrite_paths: Entry description paths (``workExperience[i].description``)
+            whose rows ``budget_acceptance.accept_rewrite_rows`` already merged into
+            ``original``. A ``rewrite_rows`` change counts as applied only for these
+            paths (every other ``rewrite_rows`` is rejected), and row-level changes to
+            such an entry are rejected because its row indexes changed.
 
     Returns:
         (result_dict, applied_changes, rejected_changes)
@@ -423,6 +442,22 @@ def apply_diffs(
         actual_value, resolved = _resolve_path(result, path)
         if not resolved:
             logger.info("Diff rejected (path not found): %s", path)
+            rejected.append(change)
+            continue
+
+        if action == "rewrite_rows":
+            # The rows were already merged into ``original`` by accept_rewrite_rows,
+            # which owns every check; here the change only has to name a merged entry.
+            if path in rewrite_paths and _BULLET_LIST_PATH_RE.match(path):
+                applied.append(change)
+            else:
+                logger.info("Diff rejected (rewrite_rows not accepted): %s", path)
+                rejected.append(change)
+            continue
+
+        entry_path = _entry_description_path(path)
+        if entry_path is not None and entry_path in rewrite_paths:
+            logger.info("Diff rejected (entry rows were rewritten whole): %s", path)
             rejected.append(change)
             continue
 
@@ -729,6 +764,7 @@ async def generate_resume_diffs(
     skill_targets: list[dict[str, Any]] | None = None,
     *,
     fixed_row_sections: tuple[str, ...] = (),
+    length_budget: str = "",
 ) -> ImproveDiffResult:
     """Generate targeted resume diffs via LLM.
 
@@ -745,6 +781,12 @@ async def generate_resume_diffs(
         skill_targets: Verified skill targets from the planning pass
         fixed_row_sections: Sections whose bullet set the harness already chose;
             the prompt tells the LLM not to append bullets to them
+        length_budget: The content budget text (``render_budget_block``) for the
+            ``{length_budget}`` block; the same call then expands, condenses and
+            restructures the entries it lists. Empty when there is no budget.
+
+    The ``length`` strategy (``LENGTH_STRATEGY_ID``) is the length safety net's
+    extra call: it only asks for ``rewrite_rows`` on the entries the budget lists.
 
     Returns:
         ImproveDiffResult with list of changes and strategy notes
@@ -753,15 +795,20 @@ async def generate_resume_diffs(
     output_language = get_language_name(language)
 
     selected_id = prompt_id or DEFAULT_IMPROVE_PROMPT_ID
-    if selected_id not in DIFF_STRATEGY_INSTRUCTIONS:
+    is_length_pass = selected_id == LENGTH_STRATEGY_ID
+    if selected_id not in DIFF_STRATEGY_INSTRUCTIONS and not is_length_pass:
         logger.warning(
             "Unknown prompt_id '%s'; using default diff strategy.",
             selected_id,
         )
-    strategy_instruction = DIFF_STRATEGY_INSTRUCTIONS.get(
-        selected_id, DIFF_STRATEGY_INSTRUCTIONS[DEFAULT_IMPROVE_PROMPT_ID]
+    strategy_instruction = (
+        DIFF_LENGTH_INSTRUCTION
+        if is_length_pass
+        else DIFF_STRATEGY_INSTRUCTIONS.get(
+            selected_id, DIFF_STRATEGY_INSTRUCTIONS[DEFAULT_IMPROVE_PROMPT_ID]
+        )
     )
-    if fixed_row_sections:
+    if fixed_row_sections and not is_length_pass:
         strategy_instruction += " " + DIFF_FIXED_ROWS_INSTRUCTION.format(
             sections=" and ".join(fixed_row_sections)
         )
@@ -783,6 +830,7 @@ async def generate_resume_diffs(
         output_language=output_language,
         job_keywords=keywords_str,
         skill_targets=_prepare_skill_targets_for_prompt(skill_targets),
+        length_budget=f"\n{length_budget.strip()}\n" if length_budget.strip() else "",
         job_description=sanitized_jd,
         original_resume=resume_input,
     )

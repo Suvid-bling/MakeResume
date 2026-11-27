@@ -29,14 +29,19 @@ Typical flow:
 1. get_status, then list_resumes / get_resume. To import a file: \
 extract_document_text -> get_resume_schema -> create_master_resume.
 2. add_job with the job description and the keywords you extracted from it.
-3. Write tailored resume_data from the source resume. Keep personalInfo, \
-employers, dates and entry counts; never invent metrics or skills.
-4. tailor_and_verify with the source, job, resume_data and print_settings. It \
-validates, saves, renders once, parse-checks and scores. If saved is false, fix \
-the violations and call it again.
+3. With a page target (max_pages), call plan_content_budget on the source resume \
+first: it measures the real layout and says how long each work entry should be. \
+Write tailored resume_data to that budget. Keep personalInfo, employers, dates \
+and entry counts; never invent metrics or skills.
+4. tailor_and_verify with the source, job, resume_data and max_pages. Print \
+settings default to the resume's saved formatting. It validates, saves, renders \
+once, parse-checks and scores. If saved is false, fix the violations and call it \
+again; pass length_fit=true when you dropped skills, awards or certifications \
+to fit the pages.
 5. For each code in issues, edit with update_resume, then verify_resume. On \
-multi_column or low_order_fidelity, suggest a single-column template. On \
-weak_writing, rewrite the lines in writing.findings (no em dashes, no weak \
+over_page_limit or under_page_fill, use last_page_fill and the budget to cut or \
+fill (at most 3 rounds). On multi_column or low_order_fidelity, suggest a \
+single-column template. On weak_writing, rewrite the lines in writing.findings (no em dashes, no weak \
 openers, every fact of the line kept, nothing added). PDF \
 rendering needs the web frontend running. recalculate_ats_score refreshes the \
 score the builder shows after edits.

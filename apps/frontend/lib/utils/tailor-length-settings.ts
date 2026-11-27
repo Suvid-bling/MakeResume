@@ -50,15 +50,25 @@ export function writeTailorLength(settings: TailorLengthSettings): void {
   safeStorage.set(TAILOR_LENGTH_STORAGE_KEY, JSON.stringify(settings));
 }
 
-/** Preview request options for a length choice; an off limit sends nothing for it. */
+/**
+ * Preview request options for a length choice; an off limit sends nothing for it. The text
+ * description format is always sent, so the backend plans result rows even with unlimited
+ * pages.
+ */
 export function buildPreviewLengthOptions(
   length: TailorLengthSettings,
   pageFit: PageFitSettings
-): { maxBulletsPerEntry?: number; pageFit?: PageFitSettings; maxPages?: number } {
+): {
+  maxBulletsPerEntry?: number;
+  pageFit?: PageFitSettings;
+  maxPages?: number;
+  descriptionFormat?: 'text';
+} {
   return {
     ...(length.maxBulletsPerEntry !== null
       ? { maxBulletsPerEntry: length.maxBulletsPerEntry }
       : {}),
     ...(length.maxPages !== null ? { pageFit, maxPages: length.maxPages } : {}),
+    ...(pageFit.descriptionFormat === 'text' ? { descriptionFormat: 'text' as const } : {}),
   };
 }

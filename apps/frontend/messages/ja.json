@@ -377,6 +377,9 @@
       "actions": {
         "addPoint": "ポイントを追加",
         "togglePointStyle": "箇条書き記号を切り替え",
+        "pointStyleBullet": "アクション行。成果行に切り替え",
+        "pointStyleResult": "成果行。通常の行に切り替え",
+        "pointStylePlain": "通常の行。アクション行に切り替え",
         "reorderPoint": "ドラッグして項目を並べ替え"
       },
       "placeholders": {
@@ -517,6 +520,12 @@
         "sans": "サンセリフ",
         "mono": "等幅"
       },
+      "descriptionFormat": "説明の形式",
+      "descriptionFormats": {
+        "bullet": "箇条書き",
+        "text": "テキスト行"
+      },
+      "descriptionFormatHint": "箇条書きはマーカーを表示します。テキスト行は、行動を「- 」、成果を「-> 」で始めます。",
       "options": "オプション",
       "compactMode": "コンパクトモード",
       "contactIcons": "連絡先アイコン",
@@ -909,6 +918,29 @@
       "unavailable": "ページ調整は利用できません",
       "finalOver": "書き換え後にページ数の上限を超える可能性があります",
       "notRechecked": "書き換え後のページ数上限への収まりは再確認されていません"
+    },
+    "lengthFit": {
+      "title": "?????",
+      "target": "?????: {pages}",
+      "before": "???: {pages}????????????? {fill}%",
+      "after": "??: {pages}????????????? {fill}%",
+      "status": {
+        "fit": "?????",
+        "over": "????????",
+        "under": "????????"
+      },
+      "aiCalls": "???????????AI????: {count}",
+      "removedTitle": "???????????",
+      "restoredTitle": "???????????",
+      "fields": {
+        "technicalSkills": "???",
+        "awards": "??",
+        "certificationsTraining": "??",
+        "workExperience": "????"
+      },
+      "reviewTitle": "???",
+      "reviewHint": "??????????????????????????????????1????????????",
+      "reviewRow": "{entry}?{line}??"
     },
     "heavyWarning": "大幅な書き直しは変更が大きいため、実際には行っていないことを書いてしまう可能性が高くなります。保存する前にすべての行を確認してください。",
     "createWarning": "作成モードは模擬的な履歴書を作成します。要約・職位・箇条書き・スキルは求人情報から生成されたもので、実際の経歴ではありません。練習用として使い、事実に基づく履歴書としては使わないでください。",

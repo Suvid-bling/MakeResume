@@ -3,6 +3,7 @@
 import { createContext, useContext, useMemo } from 'react';
 import { type ResumeData } from '@/components/dashboard/resume-component';
 import { segmentTextByKeywords, type KeywordList } from '@/lib/utils/keyword-matcher';
+import { rowHasMarker } from '@/lib/utils/description-styles';
 import { isSkillRowBreak } from '@/lib/utils/skill-groups';
 import { useTranslations } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
@@ -53,10 +54,7 @@ function HighlightedResume({
       (item): item is string =>
         typeof item === 'string' && item.trim() !== '' && !isSkillRowBreak(item)
     ) ?? [];
-  const visibleLanguages =
-    resumeData.additional?.languages?.filter(
-      (item): item is string => typeof item === 'string' && item.trim() !== ''
-    ) ?? [];
+
   const visibleCertificationsTraining =
     resumeData.additional?.certificationsTraining?.filter(
       (item): item is string => typeof item === 'string' && item.trim() !== ''
@@ -113,7 +111,7 @@ function HighlightedResume({
                     {exp.description.map((bullet, i) => {
                       // M-02: honour the per-row bullet/plain setting so this
                       // preview agrees with the resume preview and the PDF.
-                      const showMarker = exp.descriptionStyles?.[i] !== 'plain';
+                      const showMarker = rowHasMarker(exp.descriptionStyles?.[i]);
                       return (
                         <li key={i} className={cn('flex text-ink-soft', showMarker && 'ml-4')}>
                           {showMarker && (
@@ -177,7 +175,7 @@ function HighlightedResume({
                 {proj.description && (
                   <ul className="space-y-1 text-sm">
                     {proj.description.map((bullet, i) => {
-                      const showMarker = proj.descriptionStyles?.[i] !== 'plain';
+                      const showMarker = rowHasMarker(proj.descriptionStyles?.[i]);
                       return (
                         <li key={i} className={cn('flex text-ink-soft', showMarker && 'ml-4')}>
                           {showMarker && (
@@ -207,19 +205,6 @@ function HighlightedResume({
                 <div className="flex flex-wrap gap-1">
                   {visibleTechnicalSkills.map((skill, i) => (
                     <SkillTag key={i} text={skill} keywords={keywords} />
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {visibleLanguages.length > 0 && (
-              <div className="mb-3">
-                <div className="text-xs font-mono uppercase text-steel mb-1">
-                  {t('resume.sections.languages')}
-                </div>
-                <div className="flex flex-wrap gap-1">
-                  {visibleLanguages.map((lang, i) => (
-                    <SkillTag key={i} text={lang} keywords={keywords} />
                   ))}
                 </div>
               </div>
@@ -284,7 +269,7 @@ function HighlightedResume({
                     {lines.length > 0 && (
                       <ul className="space-y-1 text-sm">
                         {lines.map((line, i) => {
-                          const showMarker = item.descriptionStyles?.[i] !== 'plain';
+                          const showMarker = rowHasMarker(item.descriptionStyles?.[i]);
                           return (
                             <li key={i} className={cn('flex text-ink-soft', showMarker && 'ml-4')}>
                               {showMarker && (

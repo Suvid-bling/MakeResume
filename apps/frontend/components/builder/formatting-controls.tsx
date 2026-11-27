@@ -13,7 +13,9 @@ import {
   type HeaderFontFamily,
   type BodyFontFamily,
   type AccentColor,
+  type DescriptionFormat,
   DEFAULT_TEMPLATE_SETTINGS,
+  normalizeDescriptionFormat,
   applyTemplatePreset,
   SECTION_SPACING_MAP,
   ITEM_SPACING_MAP,
@@ -117,6 +119,10 @@ export const FormattingControls: React.FC<FormattingControlsProps> = ({ settings
 
   const handleAccentColorChange = (accentColor: AccentColor) => {
     onChange({ ...settings, accentColor });
+  };
+
+  const handleDescriptionFormatChange = (descriptionFormat: DescriptionFormat) => {
+    onChange({ ...settings, descriptionFormat });
   };
 
   const handleReset = () => {
@@ -414,6 +420,39 @@ export const FormattingControls: React.FC<FormattingControlsProps> = ({ settings
                 />
               </div>
             </div>
+          </div>
+
+          {/* Description Format: bullet markers or "- " / "-> " text lines */}
+          <div>
+            <h4
+              id={`${contentId}-description-format`}
+              className="font-mono text-xs font-bold uppercase tracking-wider mb-3 text-ink-soft"
+            >
+              {t('builder.formatting.descriptionFormat')}
+            </h4>
+            <SegmentedControl
+              size="sm"
+              aria-labelledby={`${contentId}-description-format`}
+              className="grid grid-cols-2"
+              value={normalizeDescriptionFormat(settings.descriptionFormat)}
+              onChange={handleDescriptionFormatChange}
+              items={(['bullet', 'text'] as DescriptionFormat[]).map((format) => ({
+                value: format,
+                label: (
+                  <span className="flex flex-col items-center py-1">
+                    <span className="font-bold">
+                      {t(`builder.formatting.descriptionFormats.${format}`)}
+                    </span>
+                    <span className="font-mono normal-case tracking-normal">
+                      {format === 'bullet' ? '\u2022' : '- / ->'}
+                    </span>
+                  </span>
+                ),
+              }))}
+            />
+            <p className="font-mono text-xs text-steel mt-2">
+              {t('builder.formatting.descriptionFormatHint')}
+            </p>
           </div>
 
           {/* Options Section */}

@@ -10,6 +10,7 @@ WRITING_RUBRIC = """- Start every bullet with a strong action verb in the past t
 - State the result. Keep every number in the source exactly. Never invent a number, percentage, amount, count or time saved, and never add size words ("significantly", "dramatically", "greatly") the source does not use.
 - When the source has no number, state the result through scope and outcome the source already gives: who used the work, what it replaced, what it made possible, how often it ran.
 - Keep every fact: each number, name, product, tool, skill and outcome in the original stays in the rewrite. Add none.
+- A result row (descriptionStyles "result", written with a "->" prefix in text form) holds only the outcome of the action row above it: one short line, no action verb opener, no repeated action. That action row then needs no outcome of its own.
 - One idea per bullet, at most about 35 words. No first-person pronouns ("I", "my").
 - No em dashes ("—") or double hyphens ("--"). Use a comma, a semicolon or a new sentence.
 - Avoid stock phrases such as "spearheaded", "leveraged", "orchestrated", "utilized", "synergy", "cutting-edge" and "results-driven"."""

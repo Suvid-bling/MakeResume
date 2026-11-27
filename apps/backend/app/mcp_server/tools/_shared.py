@@ -15,7 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.ai_limits import MAX_SOURCE_CHARACTERS
 from app.config import settings
 from app.database import DatabaseBusyError, ResumeNotFoundError, db
-from app.pdf import render_resume_pdf
+from app.pdf import render_resume_layout
 from app.routers.resumes import (
     _cached_job_keywords,
     _get_original_resume_data,
@@ -28,7 +28,11 @@ from app.schemas import ResumeData, normalize_resume_data
 from app.schemas.models import PageFitSettings
 from app.services.ats import compute_ats_score
 from app.services.improver import generate_improvements
-from app.services.page_fit import print_margins, resume_print_url
+from app.services.page_fit import (
+    page_fit_from_template_settings,
+    print_margins,
+    resume_print_url,
+)
 from app.services.refiner import analyze_keyword_gaps, calculate_keyword_match
 from app.services.resume_preservation import (
     finalize_ai_resume,
@@ -49,11 +53,16 @@ MAX_DIFF_PATHS = 25
 
 AUTHORING_RULES = [
     "Keep personalInfo, employers, institutions, dates and entry counts identical to the source resume.",
-    "Never invent metrics, skills, tools or certifications that the source resume does not support.",
+    "Never invent metrics, skills, tools or certifications that the source resume does not support. The one exception is filling an under-filled last page (see the length rules below).",
     "Rewrite, reorder and trim bullet text freely; keep descriptionStyles the same length as description.",
+    'Row styles: bullet is an action row, result is the outcome of the action row above it (write it with a "-> " prefix or descriptionStyles "result"; one short line, no repeated action), plain has no marker. The resume\'s descriptionFormat setting decides whether rows render as bullets or as "- " / "-> " text; the content is the same.',
     "Inline HTML in descriptions is limited to <strong>, <em>, <u> and <a>.",
     "Keep existing ids and sectionMeta from the source; omit sectionMeta on new resumes to get defaults.",
     "Keep each work entry's condensed flag as in the source; it only controls how the entry is laid out.",
+    "Length rules (page target = max_pages): call plan_content_budget first and write the first draft to its per-entry row and line budget. After tailor_and_verify, fix the page fit from last_page_fill and issues, at most 3 rounds. A last page 90% to 100% full counts as full.",
+    "Over the page target, cut in this order: technicalSkills the job does not ask for (least relevant first, a skill the job description names is never dropped), then awards, then certificationsTraining, then condense work entries (shorter rows, then fewer rows, never below one row per entry; if more than 40% of an entry's rows would go, drop its least relevant rows first). Pass length_fit=true to tailor_and_verify or validate_tailored_resume when you drop any of these.",
+    "Under the page target (under_page_fill), fill in this order: put back the skills, awards and certifications you dropped, then rows you trimmed from the master, then add rows to work entries under their existing company. Added rows may describe responsibilities and methods the entry's role involved, combined with the job description, and may name tools from the job description, but use only numbers already in that master entry, never add awards or certifications, and do not add those tools to Skills.",
+    "Language is never shown on the resume. Leave additional.languages as it is in the source; do not write or rely on it.",
 ]
 
 
@@ -230,13 +239,21 @@ def diff_paths(a: Any, b: Any, path: str = "") -> list[str]:
 
 
 def tailoring_report(
-    original: dict[str, Any], candidate: dict[str, Any]
+    original: dict[str, Any], candidate: dict[str, Any], *, length_fit: bool = False
 ) -> dict[str, Any]:
-    """Run the same preservation checks as improve/confirm."""
+    """Run the same preservation checks as improve/confirm.
+
+    With ``length_fit`` the candidate was cut or expanded to fit a page target: it may
+    drop skills, awards, certifications and languages and keep fewer rows per entry.
+    Added awards or certifications, changed personalInfo, company, title or dates, and
+    numbers that are not in the master entry are still violations.
+    """
     violations: list[str] = []
     report: dict[str, Any] = {}
     repaired = ResumeData.model_validate(
-        finalize_ai_resume(original, candidate, allow_appended_rows=True)
+        finalize_ai_resume(
+            original, candidate, allow_appended_rows=True, length_fit=length_fit
+        )
     ).model_dump()
     if repaired != candidate:
         paths = diff_paths(candidate, repaired)
@@ -245,10 +262,17 @@ def tailoring_report(
         )
         report["repaired_resume_data"] = repaired
     try:
-        _validate_confirm_payload(original, candidate, allow_appended_rows=True)
+        _validate_confirm_payload(
+            original, candidate, allow_appended_rows=True, length_fit=length_fit
+        )
     except ValueError as e:
         violations.append(str(e))
     changed = diff_paths(original, candidate)
+    if violations and not length_fit:
+        report["length_fit_hint"] = (
+            "If you dropped skills, awards, certifications or languages, or kept fewer "
+            "rows, to fit the page target, call again with length_fit=true."
+        )
     return {
         "valid": not violations,
         "violations": violations,
@@ -266,11 +290,55 @@ def render_failed_message() -> str:
     )
 
 
-async def render_pdf(resume_id: str, fit: PageFitSettings) -> bytes:
-    """The exact bytes GET /resumes/{id}/pdf returns for these settings."""
-    return await render_resume_pdf(
-        resume_print_url(resume_id, fit), fit.pageSize, margins=print_margins(fit)
-    )
+async def render_pdf(
+    resume_id: str, fit: PageFitSettings
+) -> tuple[bytes, dict[str, Any] | None]:
+    """The PDF GET /resumes/{id}/pdf returns for these settings, plus the layout
+    probe's measurement of the page (the print route's ``probe=1`` mode).
+
+    One render gives both. The probe is ``None`` when the print route did not report
+    it; the PDF is still returned then.
+    """
+    url = f"{resume_print_url(resume_id, fit)}&probe=1"
+    return await render_resume_layout(url, fit.pageSize, margins=print_margins(fit))
+
+
+async def saved_template_settings(
+    resume: dict[str, Any],
+) -> tuple[dict[str, Any] | None, str]:
+    """The resume's saved formatting and where it came from: its own, else its
+    parent's (a tailored resume uses the master's), else none (the defaults)."""
+    own = resume.get("template_settings")
+    if isinstance(own, dict) and own:
+        return own, "own"
+    parent_id = resume.get("parent_id")
+    if parent_id:
+        parent = await db.get_resume(parent_id)
+        inherited = parent.get("template_settings") if parent else None
+        if isinstance(inherited, dict) and inherited:
+            return inherited, "parent"
+    return None, "default"
+
+
+async def resolve_page_fit(
+    resume: dict[str, Any], print_settings: PageFitSettings | None
+) -> tuple[PageFitSettings, str]:
+    """Print settings for a resume: its saved formatting (own, else parent, else the
+    defaults), with any field the caller set in ``print_settings`` on top.
+
+    Returns the settings and the source of the saved part (``own``, ``parent`` or
+    ``default``).
+    """
+    saved, source = await saved_template_settings(resume)
+    fit = page_fit_from_template_settings(saved)
+    if print_settings is not None:
+        overrides = {
+            name: getattr(print_settings, name)
+            for name in print_settings.model_fields_set
+        }
+        if overrides:
+            fit = fit.model_copy(update=overrides)
+    return fit, source
 
 
 def keyword_score(

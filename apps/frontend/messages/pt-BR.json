@@ -377,6 +377,9 @@
       "actions": {
         "addPoint": "Adicionar Ponto",
         "togglePointStyle": "Alternar marcador",
+        "pointStyleBullet": "Linha de ação. Mudar para linha de resultado",
+        "pointStyleResult": "Linha de resultado. Mudar para linha simples",
+        "pointStylePlain": "Linha simples. Mudar para linha de ação",
         "reorderPoint": "Arraste para reordenar o ponto"
       },
       "placeholders": {
@@ -517,6 +520,12 @@
       "headerScale": "Cabeçalhos",
       "headerFontFamily": "Cabeçalhos",
       "bodyFontFamily": "Corpo",
+      "descriptionFormat": "Formato da descrição",
+      "descriptionFormats": {
+        "bullet": "Marcadores",
+        "text": "Linhas de texto"
+      },
+      "descriptionFormatHint": "Os marcadores desenham um símbolo. As linhas de texto começam a ação com \"- \" e o resultado com \"-> \".",
       "options": "Opções",
       "compactMode": "Modo Compacto",
       "contactIcons": "Ícones de Contato",
@@ -909,6 +918,29 @@
       "unavailable": "Ajuste de página indisponível",
       "finalOver": "Pode passar do limite de páginas após a reescrita",
       "notRechecked": "Ajuste ao limite de páginas não verificado após a reescrita"
+    },
+    "lengthFit": {
+      "title": "Ajuste de tamanho",
+      "target": "Meta de p?ginas: {pages}",
+      "before": "Antes: {pages} p?gina(s), ?ltima p?gina {fill}% cheia",
+      "after": "Agora: {pages} p?gina(s), ?ltima p?gina {fill}% cheia",
+      "status": {
+        "fit": "Na meta",
+        "over": "Acima da meta de p?ginas",
+        "under": "Abaixo da meta de p?ginas"
+      },
+      "aiCalls": "Chamadas de IA extras para ajustar a p?gina: {count}",
+      "removedTitle": "Removido para caber na p?gina",
+      "restoredTitle": "Recolocado para preencher a p?gina",
+      "fields": {
+        "technicalSkills": "Habilidade",
+        "awards": "Pr?mio",
+        "certificationsTraining": "Certifica??o",
+        "workExperience": "Experi?ncia"
+      },
+      "reviewTitle": "Precisa de revis?o",
+      "reviewHint": "Estas linhas v?o al?m do que seu curr?culo mestre diz sobre o cargo. Confira cada uma antes de salvar.",
+      "reviewRow": "{entry}, linha {line}"
     },
     "heavyWarning": "A reescrita completa faz mudanças maiores, então tem mais chance de afirmar algo que você não fez. Confira cada linha antes de salvar.",
     "createWarning": "O modo Criar escreve um currículo simulado: o resumo, os cargos, os tópicos e as habilidades são gerados a partir da descrição da vaga, não do seu histórico real. Use para praticar, não como um currículo factual.",

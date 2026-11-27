@@ -377,6 +377,9 @@
       "actions": {
         "addPoint": "Add Point",
         "togglePointStyle": "Toggle bullet marker",
+        "pointStyleBullet": "Action row. Switch to result row",
+        "pointStyleResult": "Result row. Switch to plain line",
+        "pointStylePlain": "Plain line. Switch to action row",
         "reorderPoint": "Drag to reorder point"
       },
       "placeholders": {
@@ -517,6 +520,12 @@
         "sans": "Sans",
         "mono": "Mono"
       },
+      "descriptionFormat": "Description Format",
+      "descriptionFormats": {
+        "bullet": "Bullets",
+        "text": "Text lines"
+      },
+      "descriptionFormatHint": "Bullets draw a marker. Text lines start an action with \"- \" and its result with \"-> \".",
       "options": "Options",
       "compactMode": "Compact Mode",
       "contactIcons": "Contact Icons",
@@ -909,6 +918,29 @@
       "unavailable": "Page fit unavailable",
       "finalOver": "May run over the page limit after rewriting",
       "notRechecked": "Page fit not re-checked after rewriting"
+    },
+    "lengthFit": {
+      "title": "Length fit",
+      "target": "Page target: {pages}",
+      "before": "Before: {pages} page(s), last page {fill}% full",
+      "after": "Now: {pages} page(s), last page {fill}% full",
+      "status": {
+        "fit": "On target",
+        "over": "Over the page target",
+        "under": "Under the page target"
+      },
+      "aiCalls": "Extra AI calls to fit the page: {count}",
+      "removedTitle": "Removed to fit the page",
+      "restoredTitle": "Put back to fill the page",
+      "fields": {
+        "technicalSkills": "Skill",
+        "awards": "Award",
+        "certificationsTraining": "Certification",
+        "workExperience": "Experience"
+      },
+      "reviewTitle": "Needs review",
+      "reviewHint": "These rows go beyond what your master resume says for the job. Check each one before you save.",
+      "reviewRow": "{entry}, row {line}"
     },
     "heavyWarning": "Heavy rewrite makes bigger changes, so it is more likely to state something you did not do. Check every line before you save.",
     "createWarning": "Create mode writes a simulated resume: the summary, job titles, bullets and skills are generated from the job description, not from your real history. Use it for practice, not as a factual resume.",

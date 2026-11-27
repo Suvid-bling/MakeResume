@@ -38,6 +38,8 @@ export const AdditionalForm: React.FC<AdditionalFormProps> = ({ data, onChange }
     }
   };
 
+  // Languages are never shown on a resume, so there is no input for them; the stored
+  // data is kept as it is.
   return (
     <div className="space-y-6">
       <p className="font-mono text-xs uppercase tracking-wider text-ink">
@@ -60,17 +62,7 @@ export const AdditionalForm: React.FC<AdditionalFormProps> = ({ data, onChange }
             {t('builder.additionalForm.technicalSkillsHint')}
           </p>
         </div>
-        <div className="space-y-2">
-          <Label htmlFor="languages">{t('resume.sections.languages')}</Label>
-          <Textarea
-            id="languages"
-            value={formatArray(data.languages)}
-            onChange={(e) => handleArrayChange('languages', e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder={t('builder.additionalForm.placeholders.languages')}
-            className="min-h-[120px]"
-          />
-        </div>
+
         <div className="space-y-2">
           <Label htmlFor="certifications">{t('resume.sections.certifications')}</Label>
           <Textarea

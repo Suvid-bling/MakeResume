@@ -108,17 +108,25 @@ Job descriptions come pasted in chat, or as `.md`/`.txt` files in `jobs/` (ignor
    `add_job job_description=@/abs/path/jobs/acme.md company="Acme" role="Platform Engineer" keywords:=@/abs/path/jobs/.work/acme-keywords.json`
    The keywords object has `required_skills`, `preferred_skills`, `experience_requirements`, `education_requirements`, `key_responsibilities` and `keywords` (lists of short strings); company and role go in the `company` and `role` arguments. A job pasted in chat is saved to `jobs/.work/<company>.md` first (scratch, not the batch); files the user saved in `jobs/` are the batch.
 2. **Read the source.** `get_resume resume_id=<master id>`. Start from its `resume_data` exactly as returned, including `sectionMeta` and `customSections`; a copy from anywhere else fails validation.
-3. **Write the tailored version** by the rules below.
-4. **Save and check:** `tailor_and_verify @/abs/path/jobs/.work/acme-tailor.json` with `{"source_resume_id", "job_id", "resume_data", "title": "<Role> @ <Company>"}`. It validates, saves a new resume (the master is untouched), renders the PDF, parse-checks it, scores it and adds an Applied card to the tracker. Call it **once per job**: every successful call adds another resume and tracker card, so fix things afterwards with `update_resume`.
-   - The result is long. The fields you need: `saved`, `resume.resume_id`, `score.overall_score`, `score.missing_keywords`, `page_count` and `issues` (`verify_resume` returns the same `score`, `page_count` and `issues`).
-   - `saved: false`: nothing was written. Read `validation.violations`, fix them (or adopt `validation.repaired_resume_data`) and call it again.
-   - `validation.grounding_warnings` are advisory: check each one against the source and fix anything unsupported.
-5. **Fix `issues`**, then re-check with `verify_resume resume_id=<id>`. Stop after two or three rounds and tell the user what is left.
+3. **Plan the length.** The page target is `max_pages`. Ask the user how many pages they want (1 if they did not say; "no limit" means no target, so skip this step and use no `max_pages` below). Then:
+   `plan_content_budget resume_id=<master id> job_id=<job id> max_pages=1`
+   It writes nothing. It renders the resume once with its saved formatting (its own `template_settings`, else its parent's, else the defaults; the same settings `export_resume_pdf` uses), measures every description row, and compares the result with the target. A last page 90% to 100% full counts as full. The result has:
+   - `budget_text`: the budget as prose. Follow it.
+   - `budget.entries`: per work entry a `mode` (`keep`, `expand`, `condense` or `restructure`), `target_rows` (plus or minus one; action rows and result rows count together), `target_lines`, and `action_max_units` (an action row: at most 2 lines) and `result_max_units` (a result row: 1 line). Units are words, or characters for Chinese, Japanese and Korean (`unit` says which).
+   - `suggestions`, and `skill_drop_order` when the resume is over the target: skills, then awards, then certifications, least relevant first. Skills the job asks for are never listed.
+   - `description_format` (`bullet` or `text`), `page_count` and `last_page_fill`.
+4. **Write the tailored version** by the rules below, to the budget: write the first draft with each work entry at its target rows and line limits, instead of writing freely and fixing the length afterwards. Apply the cut and fill order in **Length rules** and the row styles in **Result rows and the text format**.
+5. **Save and check:** `tailor_and_verify @/abs/path/jobs/.work/acme-tailor.json` with `{"source_resume_id", "job_id", "resume_data", "title": "<Role> @ <Company>", "max_pages": 1, "length_fit": true}`. Leave `print_settings` out: it defaults to the saved formatting, and a field you set there overrides it. Set `length_fit` to true only when you dropped skills, awards or certifications, or kept fewer rows, to fit the pages. It validates, saves a new resume (the master is untouched), renders the PDF, parse-checks it, scores it and adds an Applied card to the tracker. Call it **once per job**: every successful call adds another resume and tracker card, so fix things afterwards with `update_resume`.
+   - The result is long. The fields you need: `saved`, `resume.resume_id`, `score.overall_score`, `score.missing_keywords`, `page_count`, `last_page_fill`, `page_fill_status` and `issues` (`verify_resume` returns the same `score`, `page_count`, `last_page_fill` and `issues`, plus `layout` with each row's measured line count and line capacity).
+   - `saved: false`: nothing was written. Read `validation.violations`, fix them (or adopt `validation.repaired_resume_data`) and call it again. If the violations name skills, awards, certifications or rows you cut on purpose, call it again with `length_fit: true`. It allows dropping skills, awards, certifications and languages and fewer rows. It still rejects an added award or certification, a changed `personalInfo`, company, title or dates, and a number that is not in the master entry.
+   - `validation.grounding_warnings` are advisory: check each one against the source and fix anything unsupported. Rows you added to fill the page are the likeliest to show up here.
+6. **Fix `issues`, with the page fit as the safety net.** The budget is the plan; `last_page_fill` and `issues` decide whether it worked. Re-check with `verify_resume resume_id=<id> max_pages=<n>` (it does not remember the target). Dry-run a rewrite before saving it with `validate_tailored_resume source_resume_id=<master id> resume_data:=@… length_fit:=true`. Do **at most 3 rounds** on the page fit, keep the version closest to the target, and tell the user what is left. Within a round, first the non-AI moves of the length rules (skills, awards, certifications), and rewrite rows only if that is not enough.
 
    | Issue | What to do |
    |---|---|
    | `injectable_keywords` | Work those keywords into existing bullets or the skills list; the master supports them |
-   | `over_page_limit` | Tighten the summary and bullets; do not drop roles |
+   | `over_page_limit` | Over the page target. Cut in the order of the length rules: skills the job does not ask for, then awards, then certifications, then condense work entries. Do not drop roles |
+   | `under_page_fill` | Fewer pages than `max_pages`, or a last page under 90% full (`last_page_fill`). Fill in the order of the length rules: put back what you dropped, then add rows to work entries. Never add awards or certifications |
    | `multi_column`, `low_order_fidelity` | Suggest a single-column template such as `swiss-single` |
    | `garbled_glyphs`, `fields_missing` | Check unusual characters and empty fields |
    | `no_job_keywords` | The job was added without keywords, so there is no score: extract them, call `set_job_keywords`, then `verify_resume` |
@@ -126,11 +134,11 @@ Job descriptions come pasted in chat, or as `.md`/`.txt` files in `jobs/` (ignor
    | `render_failed` | The web app is not running at the URL in `render_error`: start it |
 
    Edit with `update_resume resume_id=<id> resume_data:=@…` (it replaces the whole resume, so start from `get_resume`), then `recalculate_ats_score resume_id=<id>`.
-6. **Run two writing rounds.** The app's own tailoring critiques and rewrites once; you have no API cost, so do it twice. Each round:
+7. **Run two writing rounds.** The app's own tailoring critiques and rewrites once; you have no API cost, so do it twice. Each round:
    1. Critique the summary and every bullet against the writing rubric below, together with the `writing.findings` that `verify_resume` returned.
    2. Rewrite only the lines that break the rubric. Every number, name, tool and skill of the original line stays; add none. A line with no number gets its outcome or scope from what the line already says; if a real number would help, ask the user instead of guessing.
-   3. `update_resume`, then `verify_resume`. `writing.score` should rise and `weak_writing` should clear.
-7. **Batch from `jobs/`:** after each job, move its file to `jobs/done/` so a rerun skips it.
+   3. `update_resume`, then `verify_resume` with the same `max_pages`. `writing.score` should rise and `weak_writing` should clear. Rewriting lines changes their length: if `last_page_fill` or `issues` now show a page-fit problem, it counts as a round of step 6.
+8. **Batch from `jobs/`:** after each job, move its file to `jobs/done/` so a rerun skips it.
 
 ### Writing rubric
 
@@ -142,6 +150,7 @@ The app's critique prompt uses this exact text (a test keeps the two in sync).
 - State the result. Keep every number in the source exactly. Never invent a number, percentage, amount, count or time saved, and never add size words ("significantly", "dramatically", "greatly") the source does not use.
 - When the source has no number, state the result through scope and outcome the source already gives: who used the work, what it replaced, what it made possible, how often it ran.
 - Keep every fact: each number, name, product, tool, skill and outcome in the original stays in the rewrite. Add none.
+- A result row (descriptionStyles "result", written with a "->" prefix in text form) holds only the outcome of the action row above it: one short line, no action verb opener, no repeated action. That action row then needs no outcome of its own.
 - One idea per bullet, at most about 35 words. No first-person pronouns ("I", "my").
 - No em dashes ("—") or double hyphens ("--"). Use a comma, a semicolon or a new sentence.
 - Avoid stock phrases such as "spearheaded", "leveraged", "orchestrated", "utilized", "synergy", "cutting-edge" and "results-driven".
@@ -151,13 +160,39 @@ The app's critique prompt uses this exact text (a test keeps the two in sync).
 
 These are the rules the app's own tailoring follows, and the validator enforces most of them.
 
-- Keep `personalInfo`, employers, job titles, locations, dates (`years`, copied exactly, months included), the number of entries and the number of bullets.
-- Never add a skill, tool, technology, certification, employer, metric or responsibility the source does not contain. Never raise seniority.
-- Rephrase existing bullets to use the job's wording where the source already shows that experience. Reorder skills by relevance, but never remove one.
+- Keep `personalInfo`, employers, job titles, locations, dates (`years`, copied exactly, months included) and the number of entries. Keep the number of bullets too, unless the page target needs more or fewer (see **Length rules**).
+- Never add a skill, tool, technology, certification, employer, metric or responsibility the source does not contain. Never raise seniority. The one exception is filling an under-filled last page, within the limits of **Length rules**.
+- Rephrase existing bullets to use the job's wording where the source already shows that experience. Reorder skills by relevance. Never remove one, except to cut for the page target (see **Length rules**).
+- Language is not shown: no template or PDF prints `additional.languages` and the editor hides it. Leave it as it is in the source and do not write it.
 - Rewrite the summary for the role from facts already in the resume.
 - Write in the resume's language. No em dashes. Avoid stock phrases such as "spearheaded", "leveraged", "orchestrated", "utilized", "synergy", "cutting-edge" and "results-driven".
 - If the job needs something the user has not shown, say so; do not paper over it. `score.missing_keywords` lists what the resume does not support: report those to the user as gaps they can add in the editor if they really have them. A low score from honest gaps is the right result.
 - The `date_consistency` part of the score is low when the source mixes date formats (`Mar 2022 - Present` beside `2015 - 2019`). Keep the dates as written and tell the user they can make the formats match in their master resume.
+
+### Length rules
+
+The page target is `max_pages`. The resume is on target when it has that many pages and the last page is 90% to 100% full (`last_page_fill` 0.9 to 1.0). The 10% is the tolerance. Without `max_pages` (or in CV mode) there is no target and every entry keeps its length.
+
+**Over the target (`over_page_limit`), cut in this order:**
+
+1. Skills the job does not ask for, least relevant first. A skill the job lists as required or preferred, or names in its text, is never dropped. A grouped line (`Label: a, b`) is cut per skill, and a line left empty is removed.
+2. Awards.
+3. Certifications.
+4. Condense work entries: shorten rows to one line first, then merge or remove the least relevant rows. Keep at least one row per entry. If a cut would remove more than 40% of an entry's rows, drop that entry's least relevant rows first (the budget lists them in `budget.drops`), so the condensing stays under 40%.
+
+**Under the target (`under_page_fill`), fill in this order:**
+
+1. Put back the skills, awards and certifications you dropped.
+2. Put back the master rows you trimmed, most relevant first.
+3. Add rows to work entries, at most 3 rows or 50% more rows per entry (the larger), most relevant and most recent entries first. Write only under the entry's own company; never add an entry, an employer, an award or a certification. Added rows may describe responsibilities and methods that fit the role, combining the job description with what the entry already says, and may name tools from the job description. Use only numbers that are already in that master entry. Do not add those tools to the skills list. Company, title, location and dates never change. These rows are not in the master, so say in the summary to the user which entries you expanded and that they should check them.
+
+Do the non-AI moves (skills, awards, certifications) before you rewrite rows. Pass `length_fit: true` to `tailor_and_verify`, `save_tailored_resume` or `validate_tailored_resume` whenever you dropped any of them or kept fewer rows.
+
+### Result rows and the text format
+
+A work, project or custom entry row has one of three styles in `descriptionStyles`, aligned one to one with `description`: `bullet` (an action row), `result` (the outcome of the action row above it) and `plain` (no marker). In `description` text a row that starts with `->` is read as a result row and the prefix is removed. Write the outcome as its own result row only when it adds something: one short line, no action verb, no repeated action, and then the action row needs no outcome of its own.
+
+How rows look is a per-resume formatting setting, `descriptionFormat`, read from the resume's saved formatting. In `bullet` (the default) every marked row has a bullet marker and a result row renders like a bullet. In `text`, an action row prints the text `- ` before it and a result row prints `-> `, as real characters in the line and without a marker symbol. Never type a leading `- ` into a row (the format adds it); the only prefix you write is `->` on a result row, or set the style to `result` and leave the prefix out. With the `text` format the budget marks entries that have no result row as `restructure`: split a row that holds an action and its outcome into an action row and a result row, using only what the row already says.
 
 ## 4. Hand off to the UI
 
@@ -179,7 +214,7 @@ The app's AI buttons hand these prompts to you:
 | Outreach message | Same, 70 to 100 words, opening with something specific from the job, then `set_outreach_message` |
 | Enhance a resume | Ask the user about missing results, numbers and tools; then `get_resume`, edit, `update_resume`. Add only what they told you |
 | Rewrite parts | Show the user the changes first, then `update_resume` |
-| Improve writing | Run the two writing rounds from step 6 on that resume, with no job: `get_resume`, critique, rewrite, `update_resume`, `verify_resume` |
+| Improve writing | Run the two writing rounds from step 7 on that resume, with no job: `get_resume`, critique, rewrite, `update_resume`, `verify_resume` |
 | Interview prep | Answer in the chat from `get_resume` and `get_resume_job`; the app does not store it in agent mode |
 | PDF file | `export_resume_pdf resume_id=<id>` writes `data/exports/<id>-<template>.pdf` (pass `output_path` for elsewhere), or use **Download** in the editor |
 | Tracker | `list_applications`, `update_application` |

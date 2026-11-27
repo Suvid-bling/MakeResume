@@ -8,6 +8,7 @@ import type {
   SectionMeta,
   SectionType,
 } from '@/components/dashboard/resume-component';
+import { normalizeDescriptionStyle, type DescriptionStyle } from '@/lib/utils/description-styles';
 import {
   createInitialResumeWizardState,
   type ResumeWizardHistoryEntry,
@@ -62,7 +63,7 @@ function stringList(value: unknown): string[] {
 function descriptionRows(
   value: unknown,
   styles: unknown
-): { description: string[]; descriptionStyles: ('plain' | 'bullet')[] } {
+): { description: string[]; descriptionStyles: DescriptionStyle[] } {
   const rows = typeof value === 'string' ? [value] : Array.isArray(value) ? value : [];
   const rawStyles = Array.isArray(styles) ? styles : [];
   const paired = rows.flatMap((row, index) =>
@@ -70,7 +71,7 @@ function descriptionRows(
       ? [
           {
             text: row.trim(),
-            style: rawStyles[index] === 'plain' ? ('plain' as const) : ('bullet' as const),
+            style: normalizeDescriptionStyle(rawStyles[index]),
           },
         ]
       : []

@@ -144,7 +144,7 @@ CRITICAL RULES:
 4. Maintain the exact same JSON structure
 5. Do not use em-dashes (—) or their variants (---, --)
 6. Make keyword incorporation the DEFAULT across all content sections, not an optional enhancement
-7. Preserve descriptionStyles arrays and keep them aligned one-to-one with description arrays
+7. Preserve descriptionStyles arrays and keep them aligned one-to-one with description arrays ("bullet" action rows and "result" outcome rows may swap; "plain" rows stay plain)
 
 Keywords to inject (only if supported by master resume):
 {keywords_to_inject}

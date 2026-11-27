@@ -377,6 +377,9 @@
       "actions": {
         "addPoint": "Ajouter un point",
         "togglePointStyle": "Basculer la puce",
+        "pointStyleBullet": "Ligne d'action. Passer à une ligne de résultat",
+        "pointStyleResult": "Ligne de résultat. Passer à une ligne simple",
+        "pointStylePlain": "Ligne simple. Passer à une ligne d'action",
         "reorderPoint": "Faites glisser pour réordonner le point"
       },
       "placeholders": {
@@ -517,6 +520,12 @@
         "sans": "Sans",
         "mono": "Mono"
       },
+      "descriptionFormat": "Format de la description",
+      "descriptionFormats": {
+        "bullet": "Puces",
+        "text": "Lignes de texte"
+      },
+      "descriptionFormatHint": "Les puces affichent un marqueur. Les lignes de texte commencent l’action par \"- \" et le résultat par \"-> \".",
       "options": "Options",
       "compactMode": "Mode compact",
       "contactIcons": "Icônes de contact",
@@ -909,6 +918,29 @@
       "unavailable": "Ajustement à la page indisponible",
       "finalOver": "Pourrait dépasser la limite de pages après réécriture",
       "notRechecked": "Respect de la limite de pages non revérifié après la réécriture"
+    },
+    "lengthFit": {
+      "title": "Ajustement de la longueur",
+      "target": "Objectif de pages : {pages}",
+      "before": "Avant : {pages} page(s), derni?re page remplie ? {fill} %",
+      "after": "Maintenant : {pages} page(s), derni?re page remplie ? {fill} %",
+      "status": {
+        "fit": "Objectif atteint",
+        "over": "Au-dessus de l?objectif de pages",
+        "under": "En dessous de l?objectif de pages"
+      },
+      "aiCalls": "Appels IA suppl?mentaires pour ajuster la page : {count}",
+      "removedTitle": "Retir? pour tenir dans la page",
+      "restoredTitle": "Remis pour remplir la page",
+      "fields": {
+        "technicalSkills": "Comp?tence",
+        "awards": "Distinction",
+        "certificationsTraining": "Certification",
+        "workExperience": "Exp?rience"
+      },
+      "reviewTitle": "? v?rifier",
+      "reviewHint": "Ces lignes vont au-del? de ce que dit votre CV ma?tre sur ce poste. V?rifiez chacune avant d?enregistrer.",
+      "reviewRow": "{entry}, ligne {line}"
     },
     "heavyWarning": "La réécriture complète fait des changements plus importants, elle risque donc davantage d'affirmer quelque chose que vous n'avez pas fait. Vérifiez chaque ligne avant d'enregistrer.",
     "createWarning": "Le mode Créer rédige un CV simulé : le résumé, les intitulés de poste, les puces et les compétences sont générés à partir de la fiche de poste, pas de votre parcours réel. À utiliser pour s'exercer, pas comme CV factuel.",

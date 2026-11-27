@@ -21,13 +21,20 @@ async def save_tailored_resume(
     resume_data: ResumeData,
     title: str | None = None,
     track_application: bool = True,
+    length_fit: bool = False,
 ) -> dict[str, Any]:
-    """Save a tailored resume you wrote. Rejected if it breaks preservation rules."""
+    """Save a tailored resume you wrote. Rejected if it breaks preservation rules.
+
+    Set length_fit true when you dropped skills, awards, certifications or languages, or kept
+    fewer rows, to fit a page target (see tailor_and_verify).
+    """
     source = await require_resume(source_resume_id)
     job = await require_job(job_id)
     candidate = resume_data.model_dump()
     ensure_within_size_limit(candidate)
-    report = tailoring_report(require_structured(source), candidate)
+    report = tailoring_report(
+        require_structured(source), candidate, length_fit=length_fit
+    )
     if not report["valid"]:
         raise ToolError(
             "Tailored resume rejected: "

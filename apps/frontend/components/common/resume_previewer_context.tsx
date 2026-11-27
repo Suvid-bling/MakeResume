@@ -1,7 +1,8 @@
 'use client';
 
 import React, { createContext, useContext, useState, ReactNode } from 'react';
-import type { BulletSelectionSummary } from '@/lib/api/resume';
+import type { DescriptionStyle } from '@/lib/utils/description-styles';
+import type { BulletSelectionSummary, LengthFitSummary } from '@/lib/api/resume';
 import type { WritingReport } from '@/lib/api/writing';
 
 export interface PersonalInfo {
@@ -22,7 +23,7 @@ export interface ExperienceEntry {
   location?: string;
   years?: string;
   description: string[];
-  descriptionStyles?: ('bullet' | 'plain')[];
+  descriptionStyles?: DescriptionStyle[];
 }
 
 export interface EducationEntry {
@@ -39,7 +40,7 @@ export interface ProjectEntry {
   role?: string;
   years?: string;
   description: string[];
-  descriptionStyles?: ('bullet' | 'plain')[];
+  descriptionStyles?: DescriptionStyle[];
 }
 
 export interface AdditionalInfo {
@@ -147,6 +148,8 @@ export interface Data {
   detailed_changes?: ResumeFieldDiff[];
   ats_score?: ATSScore;
   bullet_selection?: BulletSelectionSummary | null;
+  /** Length fit: how the page target was met, what was dropped, rows to review. */
+  length_fit?: LengthFitSummary | null;
   writing?: WritingReport | null;
   /** Where each forced keyword landed (apply-keywords responses). */
   keyword_placements?: KeywordPlacement[];
