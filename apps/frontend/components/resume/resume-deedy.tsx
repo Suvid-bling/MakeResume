@@ -169,8 +169,8 @@ interface ResumeDeedyProps {
  * column (experience, projects, awards, publications). Light gray uppercase
  * section headings, bold uppercase entry titles with the role in small caps.
  *
- * Fonts are fixed to the original's Lato and Raleway (self-hosted through
- * next/font in app/layout.tsx); the header/body font controls only change the
+ * Fonts are fixed to the original's Lato and Raleway (self-hosted from
+ * @fontsource in app/layout.tsx); the header/body font controls only change the
  * fallback stack used for scripts Lato does not cover, such as CJK. The accent
  * colour control does not apply. The original's "Last Updated" stamp is left
  * out because the template has no last-updated date to show.

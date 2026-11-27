@@ -16,6 +16,7 @@ from __future__ import annotations
 import copy
 import logging
 import re
+from collections import Counter
 from typing import Any
 
 from app.llm import complete_json
@@ -40,6 +41,11 @@ from app.services.style_profile import (
 from app.services.writing_quality import scrub_em_dashes
 
 logger = logging.getLogger(__name__)
+
+
+def _check_codes(checks: list[CreateCheckItem]) -> dict[str, int]:
+    """Check codes with counts, for logs. Never includes ``detail`` (may hold resume text)."""
+    return dict(Counter(c.code for c in checks))
 
 # Overlap thresholds for "did the LLM copy the sample" detection.
 _ZH_OVERLAP_CHARS = 12
@@ -553,6 +559,12 @@ async def generate_created_content(
         work_skeleton=skeleton_text,
         max_bullets_rule=max_bullets_rule,
     )
+    logger.info(
+        "Create mode: generating %d entries, bullet targets %s, same_language=%s",
+        len(skeleton),
+        targets,
+        same_language,
+    )
     result = await complete_json(
         prompt=prompt,
         system_prompt="You are an expert resume writer. Output only valid JSON.",
@@ -570,6 +582,12 @@ async def generate_created_content(
         same_language=same_language,
     )
 
+    logger.info(
+        "Create mode first draft: %d hard, %d soft issue(s) %s",
+        len(hard),
+        len(soft),
+        _check_codes(hard + soft),
+    )
     if not hard:
         return result, soft
 
@@ -605,6 +623,12 @@ async def generate_created_content(
         same_language=same_language,
     )
     checks = hard2 + soft2
+    logger.info(
+        "Create mode after repair: %d hard, %d soft issue(s) remain %s",
+        len(hard2),
+        len(soft2),
+        _check_codes(checks),
+    )
     checks.append(
         CreateCheckItem(
             code="repair_applied",

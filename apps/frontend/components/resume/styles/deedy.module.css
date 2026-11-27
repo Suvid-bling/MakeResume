@@ -7,7 +7,7 @@
   Recreation of Debarghya Das's "Deedy Resume" (LaTeX, Apache-2.0): Lato Hairline/Light
   name, Raleway contact lines, a thin rule, then a narrow left and a wide right column
   with light gray uppercase Lato headings. Colors follow the original class file.
-  Lato and Raleway come from next/font (app/layout.tsx); --body-font supplies the
+  Lato and Raleway come from @fontsource (app/layout.tsx); --body-font supplies the
   fallbacks for scripts they do not cover (CJK).
 */
 

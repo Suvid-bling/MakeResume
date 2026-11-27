@@ -1,0 +1,16 @@
+/*
+  Self-hosted web fonts (imported from @fontsource packages in app/layout.tsx).
+
+  These variables keep the names next/font used to expose, so every consumer
+  (globals.css, resume template CSS, lib/types/template-settings.ts) is
+  unchanged. Each value is only the family name; consumers append their own
+  fallback stacks.
+*/
+:root {
+  --font-space-grotesk: 'Space Grotesk Variable';
+  --font-lato: 'Lato';
+  --font-raleway: 'Raleway Variable';
+  --font-noto-sans-sc: 'Noto Sans SC Variable';
+  --font-noto-sans-kr: 'Noto Sans KR Variable';
+  --font-noto-sans-jp: 'Noto Sans JP Variable';
+}

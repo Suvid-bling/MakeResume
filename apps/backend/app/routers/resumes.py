@@ -6,6 +6,7 @@ import hashlib
 import json
 import logging
 import unicodedata
+from collections import Counter
 from collections.abc import Awaitable
 from datetime import datetime, timezone
 from pathlib import Path
@@ -1757,6 +1758,16 @@ async def _create_preview_flow(
     progress["stage"] = "load_original_resume"
     profile = compute_style_profile(sample)
     same_language = profile.language == language
+    logger.info(
+        "Create mode preview: resume=%s job=%s sample=%s language=%s "
+        "sample_language=%s max_bullets=%s",
+        request.resume_id,
+        request.job_id,
+        sample.id,
+        language,
+        profile.language,
+        request.max_bullets_per_entry,
+    )
 
     progress["stage"] = "generate_created_resume"
     draft, checks = await generate_created_content(
@@ -1807,10 +1818,14 @@ async def _create_preview_flow(
     )
     created_data = loop.data
     writing_report = loop.report
-    if same_language and loop.report.rewritten_paths:
+    rewritten_paths = loop.report.rewritten_paths if loop.report else []
+    if same_language and rewritten_paths:
         created_data = revert_style_drift(
-            pre_writing_data, created_data, loop.report.rewritten_paths, profile
+            pre_writing_data, created_data, rewritten_paths, profile
         )
+    logger.info(
+        "Create mode writing loop: %d line(s) rewritten", len(rewritten_paths)
+    )
 
     # Canonicalize exactly as the confirm endpoint will re-derive it from this
     # same dict used as source_data, so the preservation check there is a
@@ -1861,6 +1876,12 @@ async def _create_preview_flow(
 
     request_id = str(uuid4())
     progress["stage"] = "serialize_preview"
+    logger.info(
+        "Create mode preview %s ready: %d check(s) %s",
+        registered_preview["preview_id"],
+        len(checks),
+        dict(Counter(c.code for c in checks)),
+    )
     return ImproveResumeResponse(
         request_id=request_id,
         data=ImproveResumeData(
