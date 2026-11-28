@@ -522,10 +522,12 @@ def plan_budget(
     text_format = description_format == "text"
     scores = scores if scores is not None else _keyword_scores(data, job_keywords)
     reliable = (
-        layout.probe_ok and layout.line_height_px > 0 and layout.content_height_px > 0
+        layout.probe_ok and layout.line_height_px > 0 and layout.page_height_px > 0
     )
+    # Lines that fit on ONE page. ``content_height_px`` is the whole resume (it grows
+    # with every page), so it cannot be used here.
     lines_per_page = (
-        layout.content_height_px / layout.line_height_px
+        layout.page_height_px / layout.line_height_px
         if reliable
         else DEFAULT_LINES_PER_PAGE
     )

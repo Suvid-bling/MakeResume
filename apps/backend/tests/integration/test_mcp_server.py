@@ -49,6 +49,7 @@ EXPECTED_TOOLS = {
     "get_resume_job",
     "extract_document_text",
     "validate_tailored_resume",
+    "plan_content_budget",
     "score_resume",
     "parse_check_file",
     "parse_check_resume",
@@ -198,8 +199,8 @@ async def test_render_checks_map_invalid_stored_data_to_a_stable_error(
     monkeypatch: pytest.MonkeyPatch,
     sample_resume: dict[str, Any],
 ) -> None:
-    rendered = AsyncMock(return_value=render("single-column"))
-    monkeypatch.setattr(shared_module, "render_resume_pdf", rendered)
+    rendered = AsyncMock(return_value=(render("single-column"), None))
+    monkeypatch.setattr(shared_module, "render_resume_layout", rendered)
     monkeypatch.setattr(ats_parse, "render_resume_pdf", rendered)
     async with connect() as mcp:
         master = await _master(mcp, sample_resume)
@@ -779,8 +780,8 @@ async def _john_doe_job(mcp: Client) -> tuple[dict[str, Any], str]:
 async def test_tailor_and_verify_rejects_without_writing(
     isolated_db: Database, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    rendered = AsyncMock(return_value=render("single-column"))
-    monkeypatch.setattr(shared_module, "render_resume_pdf", rendered)
+    rendered = AsyncMock(return_value=(render("single-column"), None))
+    monkeypatch.setattr(shared_module, "render_resume_layout", rendered)
     async with connect() as mcp:
         master, job_id = await _john_doe_job(mcp)
         dropped = copy.deepcopy(master["resume_data"])
@@ -806,8 +807,8 @@ async def test_tailor_and_verify_keeps_the_save_when_verification_raises(
 ) -> None:
     monkeypatch.setattr(
         shared_module,
-        "render_resume_pdf",
-        AsyncMock(return_value=render("single-column")),
+        "render_resume_layout",
+        AsyncMock(return_value=(render("single-column"), None)),
     )
     monkeypatch.setattr(
         ats_parse, "parse_check_pdf", AsyncMock(side_effect=RuntimeError("secret"))
@@ -834,8 +835,8 @@ async def test_tailor_and_verify_keeps_the_save_when_verification_raises(
 async def test_tailor_and_verify_saves_renders_once_and_reports_issues(
     isolated_db: Database, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    rendered = AsyncMock(return_value=render("two-column"))
-    monkeypatch.setattr(shared_module, "render_resume_pdf", rendered)
+    rendered = AsyncMock(return_value=(render("two-column"), None))
+    monkeypatch.setattr(shared_module, "render_resume_layout", rendered)
     async with connect() as mcp:
         master, job_id = await _john_doe_job(mcp)
         result = await call(
@@ -868,7 +869,7 @@ async def test_verify_resume_flags_page_limit_and_writes_nothing(
     isolated_db: Database, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(
-        shared_module, "render_resume_pdf", AsyncMock(return_value=_pdf(3))
+        shared_module, "render_resume_layout", AsyncMock(return_value=(_pdf(3), None))
     )
     async with connect() as mcp:
         master = await _master(mcp, john_doe())
@@ -885,7 +886,7 @@ async def test_verify_resume_reports_weak_writing_with_paths(
     isolated_db: Database, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(
-        shared_module, "render_resume_pdf", AsyncMock(return_value=_pdf(1))
+        shared_module, "render_resume_layout", AsyncMock(return_value=(_pdf(1), None))
     )
     resume = john_doe()
     resume["workExperience"][0]["description"][0] = "Responsible for the build — CI"
@@ -909,7 +910,7 @@ async def test_verify_resume_in_cv_mode_reports_pages_without_a_limit(
     isolated_db: Database, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(
-        shared_module, "render_resume_pdf", AsyncMock(return_value=_pdf(3))
+        shared_module, "render_resume_layout", AsyncMock(return_value=(_pdf(3), None))
     )
     async with connect() as mcp:
         master = await _master(mcp, john_doe())
@@ -931,7 +932,7 @@ async def test_verify_resume_render_failure_still_scores(
 ) -> None:
     monkeypatch.setattr(
         shared_module,
-        "render_resume_pdf",
+        "render_resume_layout",
         AsyncMock(side_effect=PDFRenderError("chromium detail")),
     )
     async with connect() as mcp:
@@ -955,7 +956,7 @@ async def test_verify_resume_flags_a_job_without_keywords(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        shared_module, "render_resume_pdf", AsyncMock(return_value=_pdf(1))
+        shared_module, "render_resume_layout", AsyncMock(return_value=(_pdf(1), None))
     )
     async with connect() as mcp:
         master = await _master(mcp, john_doe())
@@ -973,7 +974,7 @@ async def test_verify_resume_treats_stale_keywords_as_missing(
     isolated_db: Database, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(
-        shared_module, "render_resume_pdf", AsyncMock(return_value=_pdf(1))
+        shared_module, "render_resume_layout", AsyncMock(return_value=(_pdf(1), None))
     )
     async with connect() as mcp:
         master, job_id = await _john_doe_job(mcp)
@@ -991,7 +992,7 @@ async def test_verify_resume_treats_empty_keywords_as_missing(
     isolated_db: Database, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(
-        shared_module, "render_resume_pdf", AsyncMock(return_value=_pdf(1))
+        shared_module, "render_resume_layout", AsyncMock(return_value=(_pdf(1), None))
     )
     async with connect() as mcp:
         master, job_id = await _john_doe_job(mcp)
@@ -1009,9 +1010,9 @@ async def test_verify_resume_treats_empty_keywords_as_missing(
 async def test_verify_resume_uses_the_pdf_route_print_url(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    mcp_render = AsyncMock(return_value=render("single-column"))
+    mcp_render = AsyncMock(return_value=(render("single-column"), None))
     route_render = AsyncMock(return_value=render("single-column"))
-    monkeypatch.setattr(shared_module, "render_resume_pdf", mcp_render)
+    monkeypatch.setattr(shared_module, "render_resume_layout", mcp_render)
     monkeypatch.setattr(resumes_router, "render_resume_pdf", route_render)
     options = {
         "template": "modern",
@@ -1036,8 +1037,15 @@ async def test_verify_resume_uses_the_pdf_route_print_url(
     mcp_url = urlsplit(mcp_render.await_args.args[0])
     route_url = urlsplit(route_render.await_args.args[0])
     assert mcp_url.path == route_url.path
-    assert parse_qs(mcp_url.query) == parse_qs(route_url.query)
-    assert mcp_render.await_args.kwargs == route_render.await_args.kwargs
+    # MCP verification adds probe=1 so the print route also reports its layout;
+    # every other query value must match what the PDF route renders.
+    mcp_query = parse_qs(mcp_url.query)
+    assert mcp_query.pop("probe") == ["1"]
+    assert mcp_query == parse_qs(route_url.query)
+    assert (
+        mcp_render.await_args.kwargs["margins"]
+        == (route_render.await_args.kwargs["margins"])
+    )
 
 
 async def test_shutdown_survives_a_failing_database_close(
@@ -1084,8 +1092,8 @@ async def test_verify_resume_flags_a_truncated_round_trip(
 ) -> None:
     monkeypatch.setattr(
         shared_module,
-        "render_resume_pdf",
-        AsyncMock(return_value=render("single-column")),
+        "render_resume_layout",
+        AsyncMock(return_value=(render("single-column"), None)),
     )
     async with connect() as mcp:
         master = await _master(mcp, john_doe())
@@ -1103,8 +1111,8 @@ async def test_verify_resume_flags_a_failed_text_layer(
 ) -> None:
     monkeypatch.setattr(
         shared_module,
-        "render_resume_pdf",
-        AsyncMock(return_value=render("single-column")),
+        "render_resume_layout",
+        AsyncMock(return_value=(render("single-column"), None)),
     )
     # Almost no extractable text, and no round trip to report missing fields.
     unreadable = ats_parse.build_report(
@@ -1146,8 +1154,8 @@ def test_diff_paths_reports_added_and_removed_nullable_keys() -> None:
 async def test_tailored_saves_reject_oversized_resume_data_before_writing(
     isolated_db: Database, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    rendered = AsyncMock(return_value=render("single-column"))
-    monkeypatch.setattr(shared_module, "render_resume_pdf", rendered)
+    rendered = AsyncMock(return_value=(render("single-column"), None))
+    monkeypatch.setattr(shared_module, "render_resume_layout", rendered)
     limit = shared_module.MAX_SOURCE_CHARACTERS
     async with connect() as mcp:
         master, job_id = await _john_doe_job(mcp)

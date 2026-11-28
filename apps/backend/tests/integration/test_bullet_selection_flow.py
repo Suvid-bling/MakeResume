@@ -114,6 +114,14 @@ def pipeline(monkeypatch: pytest.MonkeyPatch) -> Any:
     """Patch every LLM boundary; the unrefined path keeps improved == source."""
     score_bullets = AsyncMock(return_value=(SCORES, "llm"))
     monkeypatch.setattr(tailor_selection, "score_bullets", score_bullets)
+    # No browser here: the content budget's layout render fails at once, so it is
+    # skipped and these tests keep exercising the page-count selection and final
+    # check. Without this stub the render waits out its deadline (minutes per test).
+    monkeypatch.setattr(
+        tailor_selection,
+        "measure_layout",
+        AsyncMock(side_effect=PageMeasureError("no renderer in this test")),
+    )
     with ExitStack() as stack:
         stack.enter_context(
             patch(

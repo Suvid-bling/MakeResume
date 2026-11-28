@@ -80,6 +80,17 @@ async def plan_content_budget(
         job_keywords=job_keywords,
         description_format=fit.descriptionFormat,
     )
+    logger.info(
+        "plan_content_budget %s: status=%s pages=%d fill=%.2f delta_lines=%d "
+        "probe_ok=%s settings=%s",
+        resume_id,
+        budget.status,
+        layout.pages,
+        layout.last_page_fill,
+        budget.delta_lines,
+        layout.probe_ok,
+        settings_source,
+    )
     result: dict[str, Any] = {
         "resume_id": resume_id,
         "job_id": job_id,

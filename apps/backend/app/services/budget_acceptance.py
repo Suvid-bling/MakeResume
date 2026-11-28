@@ -214,4 +214,10 @@ def accept_rewrite_rows(
             )
     for path, reason in result.reverted.items():
         logger.info("rewrite_rows reverted: path=%s reason=%s", path, reason)
+    logger.info(
+        "rewrite_rows: %d accepted, %d reverted, %d row(s) flagged for review",
+        len(result.accepted),
+        len(result.reverted),
+        len(result.review_paths),
+    )
     return result

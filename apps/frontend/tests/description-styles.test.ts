@@ -23,16 +23,22 @@ describe('description style helpers', () => {
   });
 
   it('toggles after aligning styles so old resumes do not create sparse arrays', () => {
+    // A missing style is a bullet, and a bullet toggles to a result row.
     expect(toggleDescriptionStyle(['A', 'B', 'C'], undefined, 2)).toEqual([
       'bullet',
       'bullet',
-      'plain',
+      'result',
     ]);
     expect(toggleDescriptionStyle(['A', 'B', 'C'], ['bullet', 'plain'], 1)).toEqual([
       'bullet',
       'bullet',
       'bullet',
     ]);
+  });
+  it('cycles bullet, result, plain and back to bullet', () => {
+    expect(toggleDescriptionStyle(['A'], ['bullet'], 0)).toEqual(['result']);
+    expect(toggleDescriptionStyle(['A'], ['result'], 0)).toEqual(['plain']);
+    expect(toggleDescriptionStyle(['A'], ['plain'], 0)).toEqual(['bullet']);
   });
 });
 

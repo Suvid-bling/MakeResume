@@ -10,6 +10,7 @@ from app.ai_budget import AIOperationDeadlineExceeded, remaining_timeout
 from app.schemas.models import BulletSelectionSummary, PageFitSettings
 from app.services.bullet_scoring import score_bullets
 from app.services.bullet_selector import (
+    BulletKey,
     PageFitStatus,
     PageMeasureError,
     count_bullets,
@@ -49,6 +50,8 @@ class SelectionOutcome:
     data: dict[str, Any]
     summary: BulletSelectionSummary
     warnings: list[str] = field(default_factory=list)
+    # Relevance score of every bullet in the full source, keyed by its position there.
+    scores: dict[BulletKey, float] = field(default_factory=dict)
 
 
 async def run_bullet_selection(

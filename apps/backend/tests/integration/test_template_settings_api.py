@@ -23,6 +23,7 @@ VIVID: dict[str, Any] = {
     "compactMode": True,
     "showContactIcons": True,
     "accentColor": "orange",
+    "descriptionFormat": "text",
     "session": "tab-1",
     "revision": 3,
 }

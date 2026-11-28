@@ -39,7 +39,7 @@ describe.each(Object.entries(forms))('%s form description row', (_name, renderFo
     renderForm();
 
     for (const name of [
-      'builder.genericItemForm.actions.togglePointStyle',
+      'builder.genericItemForm.actions.pointStyleBullet',
       'a11y.removeDescription',
     ]) {
       const button = screen.getByRole('button', { name });
@@ -57,7 +57,7 @@ describe.each(Object.entries(forms))('%s form description row', (_name, renderFo
     expect(container.querySelectorAll('svg.size-3')).toHaveLength(0);
     // Inside a Button the primitive sizes svgs to 16px; a size-* class would opt out.
     for (const name of [
-      'builder.genericItemForm.actions.togglePointStyle',
+      'builder.genericItemForm.actions.pointStyleBullet',
       'a11y.removeDescription',
       'builder.genericItemForm.actions.addPoint',
     ]) {

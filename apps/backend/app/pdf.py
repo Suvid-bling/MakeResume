@@ -99,6 +99,8 @@ _PDF_MAX_CONCURRENCY = _bounded_env_int("PDF_MAX_CONCURRENCY", 4, 1, 16)
 _PDF_RENDER_TIMEOUT_SECONDS = _bounded_env_float(
     "PDF_RENDER_TIMEOUT_SECONDS", 75.0, 1.0, 600.0
 )
+# Longest the layout probe may take to answer once the page and fonts are ready.
+_LAYOUT_PROBE_TIMEOUT_SECONDS = 15.0
 _PDF_CLEANUP_RESERVE_SECONDS = _bounded_env_float(
     "PDF_CLEANUP_RESERVE_SECONDS", 5.0, 0.1, 30.0
 )
@@ -551,18 +553,23 @@ async def _read_layout_probe(page: Page, work_deadline: float) -> dict[str, Any]
     A page that never answers (an old frontend build, a failed measurement) costs the
     caller its layout data, not the PDF: this returns None and the render goes on.
     """
+    # The probe gets its own short deadline inside the work deadline, so a page that
+    # never answers cannot use up the time the PDF itself needs.
+    probe_deadline = min(
+        work_deadline, asyncio.get_running_loop().time() + _LAYOUT_PROBE_TIMEOUT_SECONDS
+    )
     try:
         await _await_before_deadline(
             page.wait_for_function(
                 "() => window.__resumeLayout !== undefined",
-                timeout=_stage_timeout_ms(work_deadline),
+                timeout=_stage_timeout_ms(probe_deadline),
             ),
-            work_deadline,
+            probe_deadline,
             "layout probe",
         )
         layout = await _await_before_deadline(
             page.evaluate("() => window.__resumeLayout"),
-            work_deadline,
+            probe_deadline,
             "layout probe",
         )
     except _PDFDeadlineExceeded:

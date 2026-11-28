@@ -43,14 +43,22 @@ describe('description points editor', () => {
     expect(first.descriptionStyles).toEqual(['bullet', 'plain']);
   });
 
-  it('toggles the style of one point', () => {
+  it('cycles the style of one point: bullet to result', () => {
     const onChange = renderJob();
     fireEvent.click(
-      screen.getAllByRole('button', { name: 'builder.genericItemForm.actions.togglePointStyle' })[0]
+      screen.getByRole('button', { name: 'builder.genericItemForm.actions.pointStyleBullet' })
     );
     const [first] = onChange.mock.calls[0][0] as Experience[];
     expect(first.description).toEqual(['First', 'Second']);
-    expect(first.descriptionStyles).toEqual(['plain', 'plain']);
+    expect(first.descriptionStyles).toEqual(['result', 'plain']);
+  });
+  it('cycles the style of one point: plain back to bullet', () => {
+    const onChange = renderJob();
+    fireEvent.click(
+      screen.getByRole('button', { name: 'builder.genericItemForm.actions.pointStylePlain' })
+    );
+    const [first] = onChange.mock.calls[0][0] as Experience[];
+    expect(first.descriptionStyles).toEqual(['bullet', 'bullet']);
   });
 
   it('removes a point together with its style', () => {

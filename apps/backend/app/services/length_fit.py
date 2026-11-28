@@ -750,6 +750,23 @@ async def run_length_fit(
         )
     summary.review_paths = list(dict.fromkeys(best.review_paths))
     summary.stopped = stopped
+    logger.info(
+        "Length fit done: target=%s status=%s stopped=%s pages %s->%s fill %s->%s "
+        "rounds=%d ai_calls=%d renders=%d dropped=%d restored=%d review=%d",
+        target_pages,
+        summary.status,
+        stopped,
+        summary.pages_before,
+        summary.pages_after,
+        summary.last_page_fill_before,
+        summary.last_page_fill_after,
+        rounds,
+        ai_calls,
+        renders,
+        len(summary.dropped),
+        len(summary.restored),
+        len(summary.review_paths),
+    )
     return LengthFitResult(best.data, best.layout, best.dropped, summary)
 
 

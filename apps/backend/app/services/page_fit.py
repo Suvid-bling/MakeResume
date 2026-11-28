@@ -480,7 +480,18 @@ async def measure_layout(
             selector=f".resume-print, {PRINT_ERROR_SELECTOR}",
             margins=print_margins(fit),
         )
-        return merge_layout(measure_pdf_layout(pdf_bytes, fit), probe, data)
+        measured = merge_layout(measure_pdf_layout(pdf_bytes, fit), probe, data)
+        logger.info(
+            "Layout measured: pages=%d last_page_fill=%.2f probe_ok=%s rows=%d "
+            "mapped=%d format=%s",
+            measured.pages,
+            measured.last_page_fill,
+            measured.probe_ok,
+            len(measured.rows),
+            len(measured.rows_by_path()),
+            fit.descriptionFormat,
+        )
+        return measured
     except AIOperationDeadlineExceeded:
         raise
     except Exception as e:
